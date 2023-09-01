@@ -149,33 +149,77 @@ Ensure that the eigenvectors are unit length and orthagonal to eachother.  The a
 
 =head2 move
 
+  $space->move($x, $y, $z);
+  $space->move([$x, $y, $z]);
+  $space->move($vec);
+
 Translate the origin of the coordiante space, in terms of parent coordinates.
 
 =head2 move_rel
 
+  $space->move_rel($x, $y, $z);
+  $space->move_rel([$x, $y, $z]);
+  $space->move_rel($vec);
+
 Translate the origin of the coordiante space in terms of its own axes.
-
-=head2 set_rotation
-
-Starting from the axes of the parent space, perform a rotation around yv by "yaw", a rotation
-around xv by "pitch", and a rotation around "zv" by "roll", while preserving the current scales
-of the axes.
-
-=head2 rotate
-
-Rotate the coordinate space relative to the parent axes.
-
-=head2 rotate_rel
-
-Rotate the coordinate space relative to itself.
 
 =head2 set_scale
 
-Reset the scale of the axes of this space.
+  $space->set_scale($uniform);
+  $space->set_scale($x, $y, $z);
+  $space->set_scale([$x, $y, $z]);
+  $space->set_scale($vector);
+
+Reset the scale of the axes of this space.  For instance, C<< ->set_scale(1) >> normalizes the
+vectors so that the scale is identical to the parent coordinate space.
 
 =head2 scale
 
+  $space->scale($uniform);
+  $space->scale($x, $y, $z);
+  $space->scale([$x, $y, $z]);
+  $space->scale($vector);
+
 Scale the axes of this space.
+
+=head2 rotate
+
+  $space->rotate($revolutions, 'x');
+  $space->rotate($revolutions, 'y');
+  $space->rotate($revolutions, 'z');
+  $space->rotate($revolutions, 'xv');
+  $space->rotate($revolutions, 'yv');
+  $space->rotate($revolutions, 'zv');
+  $space->rotate($revolutions, $vec);
+  $space->rotate($revolutions, $x, $y, $z);
+
+This rotates the C<xv>, C<yv>, and C<zv> by an angle (measured in rotations rather than degrees
+or radians, so .25 is a quarter rotation) relative to some other vector.
+
+Vectors 'x', 'y', or 'z' refer to the parent coordinate space axes.  'xv', 'yv', or 'zv' refer
+to the attributes of this coordinate space. (i.e. rotate it around its own axis)
+
+If you supply C<$vec> or C<< ($x,$y,$z) >> they are considered as Parent coordiantes.  If you
+want to rotate around an arbitrary vector *within* this coordinate sspace, just project it out
+to the parent coordiante space first.
+
+The following (slightly more efficient) aliases are available:
+
+=over
+
+=item rotate_x
+
+=item rotate_y
+
+=item rotate_z
+
+=item rotate_xv
+
+=item rotate_yv
+
+=item rotate_zv
+
+=back
 
 =cut
 

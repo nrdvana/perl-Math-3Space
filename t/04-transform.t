@@ -4,7 +4,7 @@ use Math::3Space 'space';
 
 sub is_vec {
 	my ($x, $y, $z)= @_;
-	return object { call sub { [shift->xyz] }, [ $x, $y, $z ]; }
+	return object { call sub { [shift->xyz] }, [ float($x), float($y), float($z) ]; }
 }
 
 subtest move => sub {
@@ -28,6 +28,17 @@ subtest scale => sub {
 		call zv => is_vec(0,0,5);
 		call origin => is_vec(0,0,0);
 	}, 'scale(5)' );
+};
+
+subtest rotate => sub {
+	my $s1= space();
+	# quarter rotation around Z axis should leave XV pointing at Y and YV pointing at -X
+	is( $s1->rotate_z(.25), object {
+		call xv => is_vec(0,1,0);
+		call yv => is_vec(-1,0,0);
+		call zv => is_vec(0,0,1);
+	}, 'rotate around parent Z axis' );
+	
 };
 
 done_testing;

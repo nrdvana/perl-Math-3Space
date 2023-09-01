@@ -8,12 +8,16 @@
 struct m3s_space;
 typedef struct m3s_space m3s_space_t;
 
+#define SPACE_XV(s)     ((s)->mat + 0)
+#define SPACE_YV(s)     ((s)->mat + 3)  
+#define SPACE_ZV(s)     ((s)->mat + 6)
+#define SPACE_ORIGIN(s) ((s)->mat + 9)
 struct m3s_space {
-	NV origin[3],
-		xv[3],
-		yv[3],
-		zv[3];
+	NV mat[12];
 };
+
+typedef NV m3s_vector_t[3];
+typedef NV *m3s_vector_p;
 
 /*------------------------------------------------------------------------------------
  * Definitions of Perl MAGIC that attach C structs to Perl SVs
@@ -113,15 +117,17 @@ static SV* m3s_wrap_space(m3s_space_t *space) {
 	return obj;
 }
 
-void m3s_read_vector_from_sv(double vec[3], SV *in) {
+void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 	SV **el;
 	AV *vec_av;
-	size_t i;
+	size_t i, n;
 	if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVAV) {
 		vec_av= (AV*) SvRV(in);
-		if (av_len(vec_av) != 2)
-			croak("Vector arrayref must have 3 elements");
-		for (i=0; i < 3; i++) {
+		n= av_len(vec_av)+1;
+		if (n != 3 && n != 2)
+			croak("Vector arrayref must have 2 or 3 elements");
+		vec[2]= 0;
+		for (i=0; i < n; i++) {
 			el= av_fetch(vec_av, i, 0);
 			if (!el || !*el || !looks_like_number(*el))
 				croak("Vector element %d is not a number", i);
@@ -134,7 +140,7 @@ void m3s_read_vector_from_sv(double vec[3], SV *in) {
 }
 
 #define DOUBLE_ALIGNMENT_MASK 7
-static SV* m3s_wrap_vector(NV vec_array[3]) {
+static SV* m3s_wrap_vector(m3s_vector_p vec_array) {
 	SV *obj, *buf;
 	char *p;
 	buf= newSVpvn((char*) vec_array, sizeof(NV)*3);
@@ -162,6 +168,44 @@ static NV * m3s_vector_get_array(SV *vector) {
 	return (NV*) p;
 }
 
+static void m3s_space_project_vector(m3s_space_t *sp, NV *vec) {
+	NV x, y, z, *mat= sp->mat;
+	vec[0] -= mat[9];
+	vec[1] -= mat[10];
+	vec[2] -= mat[11];
+	x= vec[0] * mat[0] + vec[1] * mat[1] + vec[2] * mat[2];
+	y= vec[0] * mat[3] + vec[1] * mat[4] + vec[2] * mat[5];
+	y= vec[0] * mat[6] + vec[1] * mat[7] + vec[2] * mat[8];
+	vec[0]= x;
+	vec[1]= y;
+	vec[2]= z;
+}
+
+static void m3s_space_unproject_vector(m3s_space_t *sp, NV *vec) {
+	NV x, y, z, *mat= sp->mat;
+	x= vec[0] * mat[0] + vec[1] * mat[3] + vec[2] * mat[6];
+	y= vec[0] * mat[1] + vec[1] * mat[4] + vec[2] * mat[7];
+	z= vec[0] * mat[2] + vec[1] * mat[5] + vec[2] * mat[8];
+	vec[0]= x + mat[9];
+	vec[1]= y + mat[10];
+	vec[2]= z + mat[11];
+}
+
+static inline void m3s_vector_cross(NV *dest, NV *vec1, NV *vec2) {
+	dest[0]= vec1[1]*vec2[2] - vec1[2]*vec2[1];
+	dest[1]= vec1[0]*vec2[2] - vec1[2]*vec2[0];
+	dest[2]= vec1[0]*vec2[1] - vec1[1]*vec2[0];
+}
+
+static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
+	NV mag1= vec1[0]*vec1[0] + vec1[1]*vec1[1] + vec1[2]*vec1[2];
+	NV mag2= vec2[0]*vec2[0] + vec2[1]*vec2[1] + vec2[2]*vec2[2];
+	NV prod= vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
+	if (mag1 == 0 || mag2 == 0)
+		croak("Can't calculate dot product of vector with length == 0");
+	return prod / sqrt(mag1 * mag2);
+}
+
 MODULE = Math::3Space              PACKAGE = Math::3Space
 
 void
@@ -181,25 +225,25 @@ _init(obj, source=NULL)
 			} else if (SvROK(source) && SvTYPE(source) == SVt_PVHV) {
 				attrs= (HV*) SvRV(source);
 				if ((field= hv_fetch(attrs, "xv", 2, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(space->xv, *field);
+					m3s_read_vector_from_sv(SPACE_XV(space), *field);
 				else
-					space->xv[0]= 1;
+					SPACE_XV(space)[0]= 1;
 				if ((field= hv_fetch(attrs, "yv", 2, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(space->yv, *field);
+					m3s_read_vector_from_sv(SPACE_YV(space), *field);
 				else
-					space->yv[1]= 1;
+					SPACE_YV(space)[1]= 1;
 				if ((field= hv_fetch(attrs, "zv", 2, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(space->zv, *field);
+					m3s_read_vector_from_sv(SPACE_ZV(space), *field);
 				else
-					space->zv[2]= 1;
+					SPACE_ZV(space)[2]= 1;
 				if ((field= hv_fetch(attrs, "origin", 6, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(space->origin, *field);
+					m3s_read_vector_from_sv(SPACE_ORIGIN(space), *field);
 			} else
 				croak("Invalid source for _init");
 		} else {
-			space->xv[0]= 1;
-			space->yv[1]= 1;
-			space->zv[2]= 1;
+			SPACE_XV(space)[0]= 1;
+			SPACE_YV(space)[1]= 1;
+			SPACE_ZV(space)[2]= 1;
 		}
 
 SV*
@@ -224,9 +268,9 @@ space(parent=NULL)
 		m3s_space_t *space;
 	CODE:
 		Newxz(space, 1, m3s_space_t);
-		space->xv[0]= 1;
-		space->yv[1]= 1;
-		space->zv[2]= 1;
+		SPACE_XV(space)[0]= 1;
+		SPACE_YV(space)[1]= 1;
+		SPACE_ZV(space)[2]= 1;
 		RETVAL= m3s_wrap_space(space);
 		if (parent) {
 			if (!m3s_get_magic_space(parent, 0))
@@ -237,52 +281,63 @@ space(parent=NULL)
 		RETVAL
 
 SV*
-origin(space, newval=NULL)
-	m3s_space_t *space
-	SV *newval
-	ALIAS:
-		Math::3Space::xv = 1
-		Math::3Space::yv = 2
-		Math::3Space::zv = 3
-	INIT:
-		NV *vec= ix == 1? space->xv
-			: ix == 2? space->yv
-			: ix == 3? space->zv
-			: space->origin;
-		AV *vec_av;
-	CODE:
-		if (newval)
-			m3s_read_vector_from_sv(vec, newval);
-		RETVAL= m3s_wrap_vector(vec);
-	OUTPUT:
-		RETVAL
-
-SV*
-move(space, x_or_vec, y_sv=NULL, z_sv=NULL)
+xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 	m3s_space_t *space
 	SV *x_or_vec
-	SV *y_sv
-	SV *z_sv
+	SV *y
+	SV *z
+	ALIAS:
+		Math::3Space::yv = 1
+		Math::3Space::zv = 2
+		Math::3Space::origin = 3
+	INIT:
+		NV *vec= space->mat + ix * 3;
+		AV *vec_av;
+	PPCODE:
+		if (x_or_vec) {
+			if (y) {
+				vec[0]= SvNV(x_or_vec);
+				vec[1]= SvNV(y);
+				vec[2]= z? SvNV(z) : 0;
+			} else {
+				m3s_read_vector_from_sv(vec, x_or_vec);
+			}
+			// leave $self on stack as return value
+		} else {
+			ST(0)= sv_2mortal(m3s_wrap_vector(vec));
+		}
+		XSRETURN(1);
+
+SV*
+move(space, x_or_vec, y=NULL, z=NULL)
+	m3s_space_t *space
+	SV *x_or_vec
+	SV *y
+	SV *z
 	ALIAS:
 		Math::3Space::move_rel = 1
 	INIT:
-		NV vec[3];
+		NV vec[3], *matp;
 	PPCODE:
-		if (y_sv) {
+		if (y) {
 			vec[0]= SvNV(x_or_vec);
-			vec[1]= SvNV(y_sv);
-			vec[2]= z_sv? SvNV(z_sv) : 0;
+			vec[1]= SvNV(y);
+			vec[2]= z? SvNV(z) : 0;
 		} else {
 			m3s_read_vector_from_sv(vec, x_or_vec);
 		}
 		if (ix == 0) {
-			space->origin[0] += vec[0];
-			space->origin[1] += vec[1];
-			space->origin[2] += vec[2];
+			matp= SPACE_ORIGIN(space);
+			*matp++ += vec[0];
+			*matp++ += vec[1];
+			*matp++ += vec[2];
 		} else {
-			space->origin[0] += vec[0] * space->xv[0] + vec[1] * space->yv[0] + vec[2] * space->zv[0];
-			space->origin[1] += vec[0] * space->xv[1] + vec[1] * space->yv[1] + vec[2] * space->zv[1];
-			space->origin[2] += vec[0] * space->xv[2] + vec[1] * space->yv[2] + vec[2] * space->zv[2];
+			matp= space->mat;
+			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
+			++matp;
+			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
+			++matp;
+			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
 		}
 		XSRETURN(1);
 
@@ -293,9 +348,10 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 	SV *yscale
 	SV *zscale
 	ALIAS:
-		Math::3Space::scale_rel= 1
+		math::3Space::set_scale = 1
 	INIT:
-		NV vec[3];
+		NV vec[3], s, m, *matp= SPACE_XV(space);
+		size_t i;
 	PPCODE:
 		if (SvROK(xscale_or_vec) && yscale == NULL) {
 			m3s_read_vector_from_sv(vec, xscale_or_vec);
@@ -304,30 +360,83 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 			vec[1]= yscale? SvNV(yscale) : vec[0];
 			vec[2]= zscale? SvNV(zscale) : vec[0];
 		}
-		if (ix == 0) {
-			space->xv[0] *= vec[0];
-			space->xv[1] *= vec[1];
-			space->xv[2] *= vec[2];
-			space->yv[0] *= vec[0];
-			space->yv[1] *= vec[1];
-			space->yv[2] *= vec[2];
-			space->zv[0] *= vec[0];
-			space->zv[1] *= vec[1];
-			space->zv[2] *= vec[2];
-		} else {
-			space->xv[0] *= vec[0];
-			space->xv[1] *= vec[0];
-			space->xv[2] *= vec[0];
-			space->yv[0] *= vec[1];
-			space->yv[1] *= vec[1];
-			space->yv[2] *= vec[1];
-			space->zv[0] *= vec[2];
-			space->zv[1] *= vec[2];
-			space->zv[2] *= vec[2];
+		for (i= 0; i < 3; i++) {
+			s= vec[i];
+			if (ix == 1) {
+				m= sqrt(matp[0]*matp[0] + matp[1]*matp[1] + matp[2]*matp[2]);
+				if (m > 0)
+					s /= m;
+				else
+					warn("can't scale magnitude=0 vector");
+			}
+			*matp++ *= s;
+			*matp++ *= s;
+			*matp++ *= s;
 		}
 		XSRETURN(1);
 
-/*
+SV*
+rotate(space, angle, x_or_vec, y=NULL, z=NULL)
+	m3s_space_t *space
+	NV angle
+	SV *x_or_vec
+	SV *y
+	SV *z
+	INIT:
+		NV s= sin(angle * 2 * M_PI), c= cos(angle * 2 * M_PI);
+		m3s_space_t tmp_sp;
+		NV *rmat= tmp_sp.mat, mag, scale, *axis, tmp1, tmp2;
+		int i;
+	PPCODE:
+		if (y) {
+			if (!z) croak("Missing z coordinate in space->(angle, x, y, z)");
+			rmat[0]= SvNV(x_or_vec);
+			rmat[1]= SvNV(y);
+			rmat[2]= SvNV(z);
+		} else {
+			m3s_read_vector_from_sv(rmat, x_or_vec);
+		}
+		// construct rotation matrix from vector and angle
+		mag= sqrt(rmat[0]*rmat[0] + rmat[1]*rmat[1] + rmat[2]*rmat[2]);
+		if (mag == 0)
+			croak("Can't rotate around vector with 0 magnitude");
+		scale= 1/mag;
+		rmat[0] *= scale;
+		rmat[1] *= scale;
+		rmat[2] *= scale;
+		// set y vector to any vector not colinear with x vector
+		rmat[3]= 1;
+		rmat[4]= 0;
+		rmat[5]= 0;
+		// z = normalize( x cross y )
+		m3s_vector_cross(rmat+6, rmat+0, rmat+3);
+		mag= rmat[6]*rmat[6] + rmat[7]*rmat[7] + rmat[8]*rmat[8];
+		if (mag < 1e-50) {
+			// try again with a different vector
+			rmat[3]= 0;
+			rmat[4]= 1;
+			m3s_vector_cross(rmat+6, rmat+0, rmat+3);
+			mag= rmat[6]*rmat[6] + rmat[7]*rmat[7] + rmat[8]*rmat[8];
+			if (mag == 0)
+				croak("BUG: failed to find perpendicular vector");
+		}
+		scale= 1 / sqrt(mag);
+		rmat[6] *= scale;
+		rmat[7] *= scale;
+		rmat[8] *= scale;
+		// y = z cross x (and should be normalized already because right angles)
+		m3s_vector_cross(rmat+3, rmat+6, rmat+0);
+		// Now for each axis vector, project it into this space, rotate it (around X), and project it back out
+		for (axis=space->mat + 6; axis >= space->mat; axis-= 3) {
+			m3s_space_project_vector(&tmp_sp, axis);
+			tmp1= c * axis[1] - s * axis[2];
+			tmp2= s * axis[1] + c * axis[2];
+			axis[1]= tmp1;
+			axis[2]= tmp2;
+			m3s_space_unproject_vector(&tmp_sp, axis);
+		}
+		XSRETURN(1);
+
 SV*
 rotate_x(space, angle)
 	m3s_space_t *space
@@ -339,61 +448,214 @@ rotate_x(space, angle)
 		Math::3Space::rotate_yv = 4
 		Math::3Space::rotate_zv = 5
 	INIT:
-		NV mat[3][3];
-		NV s= sin(angle * M_PI), c= cos(angle * M_PI);
+		NV *matp, *matp2, tmp1, tmp2, tmpvec1[3], tmpvec2[3];
+		size_t ofs1, ofs2;
+		NV s= sin(angle * 2 * M_PI), c= cos(angle * 2 * M_PI);
 	PPCODE:
-		if (ix == 0) { // Rotate around X axis of parent
-			space->xv[1]= c * space->xv[1] + s * space->xv[2];
-			space->xv[2]= c * space->xv[2] + s * space->xv[1];
-			space->yv[1]= 
-			space->yv[2]=
-			space->zv[1]= 
-			space->zv[2]= 
+		if (ix < 3) { // Rotate around axis of parent
+			matp= SPACE_XV(space);
+			ofs1= ix == 0? 1 : 0;
+			ofs2= ix == 2? 1 : 2;
+			tmp1= c * matp[ofs1] - s * matp[ofs2];
+			tmp2= s * matp[ofs1] + c * matp[ofs2];
+			matp[ofs1]= tmp1;
+			matp[ofs2]= tmp2;
+			matp += 3;
+			tmp1= c * matp[ofs1] - s * matp[ofs2];
+			tmp2= s * matp[ofs1] + c * matp[ofs2];
+			matp[ofs1]= tmp1;
+			matp[ofs2]= tmp2;
+			matp += 3;
+			tmp1= c * matp[ofs1] - s * matp[ofs2];
+			tmp2= s * matp[ofs1] + c * matp[ofs2];
+			matp[ofs1]= tmp1;
+			matp[ofs2]= tmp2;
+		} else {
+			matp=  ix == 3? SPACE_YV(space) : SPACE_XV(space);
+			matp2= ix == 5? SPACE_YV(space) : SPACE_ZV(space);
+			tmpvec1[0]= c * matp[0] - s * matp2[0];
+			tmpvec1[1]= c * matp[1] - s * matp2[1];
+			tmpvec1[2]= c * matp[2] - s * matp2[2];
+			tmpvec2[0]= s * matp[0] + c * matp2[0];
+			tmpvec2[1]= s * matp[1] + c * matp2[1];
+			tmpvec2[2]= s * matp[2] + c * matp2[2];
+			matp[0]= tmpvec1[0];
+			matp[1]= tmpvec1[1];
+			matp[2]= tmpvec1[2];
+			matp2[0]= tmpvec2[0];
+			matp2[1]= tmpvec2[1];
+			matp2[2]= tmpvec2[2];
 		}
 		XSRETURN(1);
-*/
 
 MODULE = Math::3Space              PACKAGE = Math::3Space::Vector
 
-SV*
-new(new_x, new_y, new_z)
-	NV new_x
-	NV new_y
-	NV new_z
+m3s_vector_p
+vec3(vec_or_x, y=NULL, z=NULL)
+	SV* vec_or_x
+	SV* y
+	SV* z
 	INIT:
-		NV vec[3]= { new_x, new_y, new_z };
+		m3s_vector_t vec;
 	CODE:
-		RETVAL= m3s_wrap_vector(vec);
+		if (y) {
+			vec[0]= SvNV(vec_or_x);
+			vec[1]= SvNV(y);
+			vec[2]= z? SvNV(z) : 0;
+		} else {
+			m3s_read_vector_from_sv(vec, vec_or_x);
+		}
+		RETVAL = vec;
 	OUTPUT:
 		RETVAL
 
+
+
 SV*
-x(vector, newval=NULL)
-	SV *vector
+x(vec, newval=NULL)
+	m3s_vector_p vec
 	SV *newval
 	ALIAS:
 		Math::3Space::Vector::y = 1
 		Math::3Space::Vector::z = 2
-	INIT:
-		NV *vec= m3s_vector_get_array(vector);
-	CODE:
-		RETVAL= newSVnv(vec[ix]);
-	OUTPUT:
-		RETVAL
+	PPCODE:
+		if (newval) {
+			vec[ix]= SvNV(newval);
+		} else {
+			ST(0)= sv_2mortal(newSVnv(vec[ix]));
+		}
+		XSRETURN(1);
 
 void
-xyz(vector, new_x=NULL, new_y=NULL, new_z=NULL)
-	SV *vector
-	SV *new_x
-	SV *new_y
-	SV *new_z
-	INIT:
-		NV *vec= m3s_vector_get_array(vector);
+xyz(vec)
+	m3s_vector_p vec
 	PPCODE:
-		if (new_x) vec[0]= SvNV(new_x);
-		if (new_y) vec[1]= SvNV(new_y);
-		if (new_z) vec[2]= SvNV(new_z);
 		EXTEND(SP, 3);
 		PUSHs(sv_2mortal(newSVnv(vec[0])));
 		PUSHs(sv_2mortal(newSVnv(vec[1])));
 		PUSHs(sv_2mortal(newSVnv(vec[2])));
+
+SV*
+magnitude(vec, scale=NULL)
+	m3s_vector_p vec
+	SV *scale
+	INIT:
+		NV s, m= sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
+	PPCODE:
+		if (scale) {
+			if (m > 0) {
+				s= SvNV(scale) / m;
+				vec[0] *= s;
+				vec[1] *= s;
+				vec[2] *= s;
+			} else
+				warn("can't scale magnitude=0 vector");
+			// return $self
+		} else {
+			ST(0)= sv_2mortal(newSVnv(m));
+		}
+		XSRETURN(1);
+
+SV*
+set(vec1, vec2_or_x, y=NULL, z=NULL)
+	m3s_vector_p vec1
+	SV *vec2_or_x
+	SV *y
+	SV *z
+	ALIAS:
+		Math::3Space::Vector::add = 1
+		Math::3Space::Vector::sub = 2
+	INIT:
+		NV vec2[3];
+	PPCODE:
+		if (y || looks_like_number(vec2_or_x)) {
+			vec2[0]= SvNV(vec2_or_x);
+			vec2[1]= y? SvNV(y) : 0;
+			vec2[2]= z? SvNV(z) : 0;
+		} else {
+			m3s_read_vector_from_sv(vec2, vec2_or_x);
+		}
+		if (ix == 0) {
+			vec1[0]= vec2[0];
+			vec1[1]= vec2[1];
+			vec1[2]= vec2[2];
+		} else if (ix == 1) {
+			vec1[0]+= vec2[0];
+			vec1[1]+= vec2[1];
+			vec1[2]+= vec2[2];
+		} else {
+			vec1[0]-= vec2[0];
+			vec1[1]-= vec2[1];
+			vec1[2]-= vec2[2];
+		}
+		XSRETURN(1);
+
+SV*
+scale(vec1, vec2_or_x, y=NULL, z=NULL)
+	m3s_vector_p vec1
+	SV *vec2_or_x
+	SV *y
+	SV *z
+	INIT:
+		NV vec2[3];
+	PPCODE:
+		// single value should be treated as ($x,$x,$x) inatead of ($x,0,0)
+		if (looks_like_number(vec2_or_x)) {
+			vec2[0]= SvNV(vec2_or_x);
+			vec2[1]= y? SvNV(y) : vec2[0];
+			vec2[2]= z? SvNV(z) : y? 1 : vec2[0];
+		}
+		else {
+			m3s_read_vector_from_sv(vec2, vec2_or_x);
+		}
+		vec1[0]*= vec2[0];
+		vec1[1]*= vec2[1];
+		vec1[2]*= vec2[2];
+		XSRETURN(1);
+
+NV
+dot(vec1, vec2_or_x, y=NULL, z=NULL)
+	m3s_vector_p vec1
+	SV *vec2_or_x
+	SV *y
+	SV *z
+	INIT:
+		NV vec2[3];
+	CODE:
+		if (y) {
+			vec2[0]= SvNV(vec2_or_x);
+			vec2[1]= SvNV(y);
+			vec2[2]= z? SvNV(z) : 0;
+		} else {
+			m3s_read_vector_from_sv(vec2, vec2_or_x);
+		}
+		RETVAL= m3s_vector_dotprod(vec1, vec2);
+	OUTPUT:
+		RETVAL
+
+void
+cross(vec1, vec2_or_x, vec3_or_y=NULL, z=NULL)
+	m3s_vector_p vec1
+	SV *vec2_or_x
+	SV *vec3_or_y
+	SV *z
+	INIT:
+		m3s_vector_t vec2, vec3;
+	PPCODE:
+		if (!vec3_or_y) { // RET = vec1->cross(vec2)
+			m3s_read_vector_from_sv(vec2, vec2_or_x);
+			m3s_vector_cross(vec3, vec1, vec2);
+			ST(0)= sv_2mortal(m3s_wrap_vector(vec3));
+		} else if (z || !SvROK(vec2_or_x) || looks_like_number(vec2_or_x)) { // RET = vec1->cross(x,y,z)
+			vec2[0]= SvNV(vec2_or_x);
+			vec2[1]= SvNV(vec3_or_y);
+			vec2[2]= z? SvNV(z) : 0;
+			m3s_vector_cross(vec3, vec1, vec2);
+			ST(0)= sv_2mortal(m3s_wrap_vector(vec3));
+		} else {
+			m3s_read_vector_from_sv(vec2, vec2_or_x);
+			m3s_read_vector_from_sv(vec3, vec3_or_y);
+			m3s_vector_cross(vec1, vec2, vec3);
+			// leave $self on stack
+		}
+		XSRETURN(1);

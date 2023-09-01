@@ -1,5 +1,6 @@
 TYPEMAP
 m3s_space_t*        O_ThreeSpace
+m3s_vector_p        O_ThreeSpace_Vector
 
 INPUT
 O_ThreeSpace
@@ -8,3 +9,11 @@ O_ThreeSpace
 OUTPUT
 O_ThreeSpace
 	$arg= m3s_wrap_space($var);
+
+INPUT
+O_ThreeSpace_Vector
+	$var= m3s_vector_get_array($arg);
+
+OUTPUT
+O_ThreeSpace_Vector
+	$arg= m3s_wrap_vector($var);
