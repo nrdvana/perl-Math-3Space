@@ -12,7 +12,7 @@ XSLoader::load('Math::3Space', $Math::3Space::VERSION);
 
 =head1 SYNOPSIS
 
-  use Math::3Space 'vec', 'space';
+  use Math::3Space 'vec3', 'space';
   my $s1= space();
   my $s2= space($s1);
   
@@ -51,8 +51,9 @@ systems.
 
 package Math::3Space::Exports {
 	use Exporter::Extensible -exporter_setup => 1;
-	sub vec :Export { Math::3Space::Vector->new(@_) }
-	sub space :Export { Math::3Space::space(@_) }
+	*vec3= *Math::3Space::Vector::vec3;
+	*space= *Math::3Space::space;
+	export 'vec3', 'space';
 }
 sub import { shift; Math::3Space::Exports->import_into(scalar(caller), @_) }
 
@@ -126,18 +127,39 @@ Return a new space with the same values, including same parent.
 
 Return a new space describing an identity, with the current object as its parent.
 
-=head2 project
-
-Project a point into this coordinate space.  You may optionally specify a space it is being
-projected from, else this assumes it comes from global absolute coordinates.  A new vector
-is returned (stored in the same format as you supplied)  You may also pass an array or buffer
-of vectors.
-
 =head2 reparent
 
 Project this coordiante space into a different parent coordinate space, including C<undef> to
 reference global absolute coordiantes.  (This is named 'reparent' rather than 'set_parent' to
 emphasize that it changes the whole object, not just the parent attribute)
+
+=head2 project_point
+
+  @local= $space->project_point( $vec1, $vec2, ... );
+  @arrayrefs= $space->project_point( [$x,$y,$z], [$x,$y,$z], ... );
+
+Project one or more points into this coordinate space.  The points are assumed to be defined
+in the parent 3Space (i.e. siblings to the origin of this 3Space)  This subtracts the origin
+of this space from the point creating a vector, then projects the vector as per
+L<project_vector>.  The returned list is the same length and format as the list passed to
+this function, e.g. if you supply Vector objects you get back vector objects, and likewise for
+arrayrefs.
+
+=head2 project_vector
+
+Same as L</project_point> but the L</origin> is not subtracted before the projection. So,
+vectors that were acting as directional indicators will still be indicating that direction
+from the perspective of this 3Space.
+
+=head2 project_point_inplace
+
+  $space->project_point_inplace( $vec1, $vec2, ... );
+
+Like L</project_point>, but modifies the supplied parameters.
+
+=head2 project_vector_inplace
+
+Like L</project_vector>, but modifies the supplied parameters.
 
 =head2 normalize
 
