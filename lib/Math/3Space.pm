@@ -17,31 +17,41 @@ XSLoader::load('Math::3Space', $Math::3Space::VERSION);
   my $s2= space($s1);
   
   # changes relative to parent space
-  $s1->look_at([3,1,2]);
+  $s1->reset; # to identity
   $s1->move([1,2,3]);
-  $s1->rotate($yaw, $pitch, $roll);
   $s1->scale($uniform_scale);
   $s1->scale($xs, $ys, $zs);
+  $s1->rotate($angle, $vector);
+  $s1->orient($xvec, $yvec, $zvec);
   
   # changes relative to itself
   $s1->move_rel([1,2,3]);  
   $s1->rotate_rel($yaw, $pitch, $roll);
   $s1->scale_rel($uniform_scale);
+  $s1->rotate_yv($yaw);
+  $s1->rotate_xv($pitch);
+  $s1->rotate_zv($roll);
+  $s1->orient_rel($xvec, $yvec, $zvec);
   
-  # Translate coordiantes between spaces
-  $s2_vec= $s2->project($s1_vec, $s1);
-  $s2->reparent(undef); # no longer nested
+  # Translate coordinates between spaces
+  $s2_vec= $s2->project_point($s1_vec);
+  $s2->project_point_inplace($s1_vec);
+  $s2->reparent(undef); # change parent, preserve obsolute orientation
+  
+  # Interoperate with OpenGL
+  @float16= $s1->get_4x4_projection;
+  @float16= $s1->get_4x4_unprojection;
 
 =head1 DESCRIPTION
 
-This module implements the sort of 3D coordinate space math that would normally be done using
-4x4 matrices, but instead using 3 eigenvectors (i.e. unit vectors that point along the axes of
-the coordinate space) plus an origin point.  This results in overall fewer math operations
-needed to project points, and gives you a more useful mental model to work with, like being
-able to see which direction the coordinate space is "facing", or which way is "up".
+This module implements the sort of 3D coordinate space math that would typically be done using
+4x4 matrices, but instead using a 3x4 matrix of 3 axis vectors (i.e. vectors that point along
+the axes of the coordinate space) plus an origin point.  This results in significantly fewer
+math operations needed to project points, and gives you a more useful mental model to work with,
+like being able to see which direction the coordinate space is "facing", or which way is "up".
 
-The coordiante spaces track their 'parent' coordinate space, so you can perform advanced
-projections from a space in side a space out to a different space inside a space inside a space
+The coordinate spaces track their 'parent' coordinate space, so you can perform advanced
+projections from a space inside a space out to a different space inside a space inside a space
 without thinking about the details.
 
 The coordiante spaces can be exported as 4x4 matrices for use with OpenGL or other common 3D

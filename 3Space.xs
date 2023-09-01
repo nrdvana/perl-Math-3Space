@@ -5,6 +5,10 @@
 
 #include <math.h>
 
+/**********************************************************************************************\
+* m3s API, defining all the math for this module.
+\**********************************************************************************************/
+
 struct m3s_space;
 typedef struct m3s_space m3s_space_t;
 typedef struct m3s_space *m3s_space_or_null;
@@ -36,7 +40,7 @@ void m3s_space_init(m3s_space_t *space) {
 
 static inline void m3s_vector_cross(NV *dest, NV *vec1, NV *vec2) {
 	dest[0]= vec1[1]*vec2[2] - vec1[2]*vec2[1];
-	dest[1]= vec1[0]*vec2[2] - vec1[2]*vec2[0];
+	dest[1]= vec1[2]*vec2[0] - vec1[0]*vec2[2];
 	dest[2]= vec1[0]*vec2[1] - vec1[1]*vec2[0];
 }
 
@@ -164,10 +168,59 @@ static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
 	// cache, which is why those caches need rebuilt before calling this function.
 }
 
-/*------------------------------------------------------------------------------------
- * Definitions of Perl MAGIC that attach C structs to Perl SVs
- * All instances of Math::3Space have a magic-attached struct m3s_space_t
- */
+static void m3s_space_rotate(m3s_space_t *space, NV angle, m3s_vector_p axis) {
+	NV c, s, mag, scale, *vec, tmp0, tmp1;
+	m3s_space_t r;
+	angle *= 2 * M_PI;
+	c= cos(angle);
+	s= sin(angle);
+
+	// Construct temporary coordinate space where 'zv' is 'axis'
+	mag= sqrt(axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]);
+	if (mag == 0)
+		croak("Can't rotate around vector with 0 magnitude");
+	scale= 1/mag;
+	r.mat[6]= axis[0] * scale;
+	r.mat[7]= axis[1] * scale;
+	r.mat[8]= axis[2] * scale;
+	// set y vector to any vector not colinear with z vector
+	r.mat[3]= 1;
+	r.mat[4]= 0;
+	r.mat[5]= 0;
+	// x = normalize( y cross z )
+	m3s_vector_cross(r.mat, r.mat+3, r.mat+6);
+	mag= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
+	if (mag < 1e-50) {
+		// try again with a different vector
+		r.mat[3]= 0;
+		r.mat[4]= 1;
+		m3s_vector_cross(r.mat, r.mat+3, r.mat+6);
+		mag= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
+		if (mag == 0)
+			croak("BUG: failed to find perpendicular vector");
+	}
+	scale= 1 / sqrt(mag);
+	r.mat[0] *= scale;
+	r.mat[1] *= scale;
+	r.mat[2] *= scale;
+	// y = z cross x (and should be normalized already because right angles)
+	m3s_vector_cross(r.mat+3, r.mat+6, r.mat+0);
+	// Now for each axis vector, project it into this space, rotate it (around Z), and project it back out
+	for (vec=space->mat + 6; vec >= space->mat; vec-= 3) {
+		m3s_space_project_vector(&r, vec);
+		tmp0= c * vec[0] - s * vec[1];
+		tmp1= s * vec[0] + c * vec[1];
+		vec[0]= tmp0;
+		vec[1]= tmp1;
+		m3s_space_unproject_vector(&r, vec);
+	}
+}
+
+/**********************************************************************************************\
+* Typemap code that converts from Perl objects to C structs and back
+* All instances of Math::3Space have a magic-attached struct m3s_space_t
+* All vectors objects are a blessed scalar ref aligned to hold double[3] in the PV
+\**********************************************************************************************/
 
 // destructor for m3s_space_t
 static int m3s_space_magic_free(pTHX_ SV* sv, MAGIC* mg) {
@@ -260,28 +313,6 @@ static SV* m3s_wrap_space(m3s_space_t *space) {
 	return obj;
 }
 
-static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
-	SV **el;
-	AV *vec_av;
-	size_t i, n;
-	if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVAV) {
-		vec_av= (AV*) SvRV(in);
-		n= av_len(vec_av)+1;
-		if (n != 3 && n != 2)
-			croak("Vector arrayref must have 2 or 3 elements");
-		vec[2]= 0;
-		for (i=0; i < n; i++) {
-			el= av_fetch(vec_av, i, 0);
-			if (!el || !*el || !looks_like_number(*el))
-				croak("Vector element %d is not a number", i);
-			vec[i]= SvNV(*el);
-		}
-	} else if (SvROK(in) && SvPOK(SvRV(in)) && SvCUR(SvRV(in)) == sizeof(NV)*3) {
-		memcpy(vec, SvPV_nolen(SvRV(in)), sizeof(NV)*3);
-	} else
-		croak("Can't read vector from %s", sv_reftype(in, 1));
-}
-
 #define DOUBLE_ALIGNMENT_MASK 7
 static SV* m3s_wrap_vector(m3s_vector_p vec_array) {
 	SV *obj, *buf;
@@ -311,6 +342,31 @@ static NV * m3s_vector_get_array(SV *vector) {
 	return (NV*) p;
 }
 
+static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
+	SV **el;
+	AV *vec_av;
+	size_t i, n;
+	if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVAV) {
+		vec_av= (AV*) SvRV(in);
+		n= av_len(vec_av)+1;
+		if (n != 3 && n != 2)
+			croak("Vector arrayref must have 2 or 3 elements");
+		vec[2]= 0;
+		for (i=0; i < n; i++) {
+			el= av_fetch(vec_av, i, 0);
+			if (!el || !*el || !looks_like_number(*el))
+				croak("Vector element %d is not a number", i);
+			vec[i]= SvNV(*el);
+		}
+	} else if (SvROK(in) && SvPOK(SvRV(in)) && SvCUR(SvRV(in)) == sizeof(NV)*3) {
+		memcpy(vec, SvPV_nolen(SvRV(in)), sizeof(NV)*3);
+	} else
+		croak("Can't read vector from %s", sv_reftype(in, 1));
+}
+
+/**********************************************************************************************\
+* Math::3Space Public API
+\**********************************************************************************************/
 MODULE = Math::3Space              PACKAGE = Math::3Space
 
 void
@@ -488,58 +544,18 @@ rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 	SV *y
 	SV *z
 	INIT:
-		NV s= sin(angle * 2 * M_PI), c= cos(angle * 2 * M_PI);
-		m3s_space_t tmp_sp;
-		NV *rmat= tmp_sp.mat, mag, scale, *axis, tmp1, tmp2;
-		int i;
+		m3s_vector_t vec;
 	PPCODE:
 		if (y) {
-			if (!z) croak("Missing z coordinate in space->(angle, x, y, z)");
-			rmat[0]= SvNV(x_or_vec);
-			rmat[1]= SvNV(y);
-			rmat[2]= SvNV(z);
+			if (!z) croak("Missing z coordinate in space->rotate(angle, x, y, z)");
+			vec[0]= SvNV(x_or_vec);
+			vec[1]= SvNV(y);
+			vec[2]= SvNV(z);
 		} else {
-			m3s_read_vector_from_sv(rmat, x_or_vec);
+			m3s_read_vector_from_sv(vec, x_or_vec);
 		}
-		// construct rotation matrix from vector and angle
-		mag= sqrt(rmat[0]*rmat[0] + rmat[1]*rmat[1] + rmat[2]*rmat[2]);
-		if (mag == 0)
-			croak("Can't rotate around vector with 0 magnitude");
-		scale= 1/mag;
-		rmat[0] *= scale;
-		rmat[1] *= scale;
-		rmat[2] *= scale;
-		// set y vector to any vector not colinear with x vector
-		rmat[3]= 1;
-		rmat[4]= 0;
-		rmat[5]= 0;
-		// z = normalize( x cross y )
-		m3s_vector_cross(rmat+6, rmat+0, rmat+3);
-		mag= rmat[6]*rmat[6] + rmat[7]*rmat[7] + rmat[8]*rmat[8];
-		if (mag < 1e-50) {
-			// try again with a different vector
-			rmat[3]= 0;
-			rmat[4]= 1;
-			m3s_vector_cross(rmat+6, rmat+0, rmat+3);
-			mag= rmat[6]*rmat[6] + rmat[7]*rmat[7] + rmat[8]*rmat[8];
-			if (mag == 0)
-				croak("BUG: failed to find perpendicular vector");
-		}
-		scale= 1 / sqrt(mag);
-		rmat[6] *= scale;
-		rmat[7] *= scale;
-		rmat[8] *= scale;
-		// y = z cross x (and should be normalized already because right angles)
-		m3s_vector_cross(rmat+3, rmat+6, rmat+0);
-		// Now for each axis vector, project it into this space, rotate it (around X), and project it back out
-		for (axis=space->mat + 6; axis >= space->mat; axis-= 3) {
-			m3s_space_project_vector(&tmp_sp, axis);
-			tmp1= c * axis[1] - s * axis[2];
-			tmp2= s * axis[1] + c * axis[2];
-			axis[1]= tmp1;
-			axis[2]= tmp2;
-			m3s_space_unproject_vector(&tmp_sp, axis);
-		}
+		m3s_space_rotate(space, angle, vec);
+		// return $self
 		XSRETURN(1);
 
 SV*
@@ -684,6 +700,9 @@ reparent(space, parent)
 			m3s_space_reparent(sp3, NULL);
 		}
 
+#***********************************************************************************************
+# Vector object
+#***********************************************************************************************
 MODULE = Math::3Space              PACKAGE = Math::3Space::Vector
 
 m3s_vector_p
