@@ -7,10 +7,29 @@ sub vec_check {
 	return object { call sub { [shift->xyz] }, [ float($x), float($y), float($z) ]; }
 }
 
-my $sp1= space->rotate_z(.125);
-my $sp2= $sp1->space->rotate_z(.125);
-my $sp3= $sp2->space->rotate_z(.125);
-my $sp4= $sp3->space->rotate_z(.125);
+subtest parent_graph_checks => sub {
+	# detect cycles
+	my @spaces= (space->rot(.25, [1,1,1]));
+	push @spaces, $spaces[-1]->space for 1..100;
+	is( $spaces[-1]->parent_count, 100, 'tree is 100 deep' );
+	is( $spaces[$_]->parent_count, $_, "parent count of $_" )
+		for 62..66; # cross threshold where it starts checking for cycles
+
+	is( eval { $spaces[-5]->reparent($spaces[-1]) }, undef, "can't reparent" );
+	like( $@, qr/cycle/i, 'error about cycles' );
+
+	is( eval { $spaces[0]->reparent($spaces[-5]) }, undef, "can't reparent" );
+	like( $@, qr/cycle/i, 'error about cycles' );
+
+	is( eval { $spaces[11]->reparent($spaces[0]) }, $spaces[11], "reparent 11 under 0" );
+	is( $spaces[11]->parent_count, 1, 'space 11 has one parent now' );
+	is( $spaces[-1]->parent_count, 90, 'space 100 has 90 parents now' );
+};
+
+my $sp1= space->rot_z(.125);
+my $sp2= $sp1->space->rot_z(.125);
+my $sp3= $sp2->space->rot_z(.125);
+my $sp4= $sp3->space->rot_z(.125);
 
 # Space 4 should be a complete .5 rotation, with X and Y axes pointing opposite direction.
 my $v= vec3(1,0,0);
@@ -29,9 +48,9 @@ $sp4->reparent($sp3);
 is( $sp4->parent_count, 3, 'sp4 back to 3 parents' );
 
 # Create a new branch of the tree
-my $sp2a= $sp1->space->rotate_z(-.125);
-my $sp3a= $sp2a->space->rotate_z(-.125);
-my $sp4a= $sp3a->space->rotate_z(-.125);
+my $sp2a= $sp1->space->rot_z(-.125);
+my $sp3a= $sp2a->space->rot_z(-.125);
+my $sp4a= $sp3a->space->rot_z(-.125);
 
 # Now, to project a point from sp4 to sp4a travels through six 1/8 rotations = 3/4
 $v= vec3(5,5,5);
@@ -43,22 +62,5 @@ is( $v, vec_check(5,-5,5), 'cross-project sp4 to sp4a makes .75 rotation' );
 my $sp4b= $sp4a->clone->reparent($sp4);
 is( $sp4b->parent_count, 4, 'sp4b parents = 4' );
 is( $sp4b->project(vec3(5,5,5)), vec_check(5,-5,5), 'project sp4 => sp4b' );
-
-# detect cycles
-my @spaces= ($sp1);
-push @spaces, $spaces[-1]->space for 1..100;
-is( $spaces[-1]->parent_count, 100, 'tree is 100 deep' );
-is( $spaces[$_]->parent_count, $_, "parent count of $_" )
-	for 62..66; # cross threshold where it starts checking for cycles
-
-is( eval { $spaces[-5]->reparent($spaces[-1]) }, undef, "can't reparent" );
-like( $@, qr/cycle/i, 'error about cycles' );
-
-is( eval { $spaces[0]->reparent($spaces[-5]) }, undef, "can't reparent" );
-like( $@, qr/cycle/i, 'error about cycles' );
-
-is( eval { $spaces[11]->reparent($spaces[0]) }, $spaces[11], "reparent 11 under 0" );
-is( $spaces[11]->parent_count, 1, 'space 11 has one parent now' );
-is( $spaces[-1]->parent_count, 90, 'space 100 has 90 parents now' );
 
 done_testing;

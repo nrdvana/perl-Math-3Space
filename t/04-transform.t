@@ -7,17 +7,15 @@ sub vec_check {
 	return object { call sub { [shift->xyz] }, [ float($x), float($y), float($z) ]; }
 }
 
-subtest move => sub {
+subtest translate => sub {
 	my $s1= space();
 	$s1->xv([2,0,0]); # just so move_rel is different from move
-	is( $s1->move( 3,3,3), object { call origin => vec_check(3,3,3); }, 'move(3,3,3)' );
-	is( $s1->move(-1,0,1), object { call origin => vec_check(2,3,4); }, 'move(-1,0,1)' );
-};
-
-subtest move_rel => sub {
-	my $s1= space();
+	is( $s1->tr( 3,3,3), object { call origin => vec_check(3,3,3); }, 'translate(3,3,3)' );
+	is( $s1->tr(-1,0,1), object { call origin => vec_check(2,3,4); }, 'translate(-1,0,1)' );
+	
+	$s1= space();
 	$s1->xv([2,0,0]);
-	is( $s1->move_rel([1,1,1]), object { call origin => vec_check(2,1,1); }, 'move_rel(1,1,1)' );
+	is( $s1->travel([1,1,1]), object { call origin => vec_check(2,1,1); }, 'travel(1,1,1)' );
 };
 
 subtest scale => sub {
@@ -33,21 +31,21 @@ subtest scale => sub {
 subtest rotate => sub {
 	# Basic quarter rotations around each axis
 	# quarter rotation around X axis should leave y axis pointing at z
-	is( space->rotate_x(.25), object {
+	is( space->rot_x(.25), object {
 		call is_normal => T;
 		call xv => vec_check(1,0,0);
 		call yv => vec_check(0,0,1);
 		call zv => vec_check(0,-1,0);
 	}, 'rotate around parent X axis' );
 	# quarter rotation around Y axis should move z to point at x
-	is( space->rotate_y(.25), object {
+	is( space->rot_y(.25), object {
 		call is_normal => T;
 		call xv => vec_check(0,0,-1);
 		call yv => vec_check(0,1,0);
 		call zv => vec_check(1,0,0);
 	}, 'rotate around parent Y axis' );
 	# quarter rotation around Z axis should leave XV pointing at Y and YV pointing at -X
-	is( space->rotate_z(.25), object {
+	is( space->rot_z(.25), object {
 		call is_normal => T;
 		call xv => vec_check(0,1,0);
 		call yv => vec_check(-1,0,0);
@@ -56,7 +54,7 @@ subtest rotate => sub {
 	
 	# Rotations of non-unit-length axis vectors:
 	# Ensure that magnitude is preserved and that they remain orthagonal.
-	my $s1= space->scale(2,3,4)->rotate_x(.1)->rotate_y(.4)->rotate_z(.8);
+	my $s1= space->scale(2,3,4)->rot_x(.1)->rot_y(.4)->rot_z(.8);
 	is( $s1, object {
 		call is_normal => F;
 		call xv => object { call magnitude => float(2); call [ dot => $s1->yv ] => float(0); };
@@ -67,42 +65,42 @@ subtest rotate => sub {
 	# Starting from the Identity, the self-relative rotations will have the same effect as the
 	# rotations around parent axes.
 	# quarter rotation around X axis should leave y axis pointing at z
-	is( space->rotate_xv(.25), object {
+	is( space->rot_xv(.25), object {
 		call is_normal => T;
 		call xv => vec_check(1,0,0);
 		call yv => vec_check(0,0,1);
 		call zv => vec_check(0,-1,0);
 	}, 'rotate around own X axis, optimized' );
 	# quarter rotation around Y axis should move z to point at x
-	is( space->rotate_yv(.25), object {
+	is( space->rot_yv(.25), object {
 		call is_normal => T;
 		call xv => vec_check(0,0,-1);
 		call yv => vec_check(0,1,0);
 		call zv => vec_check(1,0,0);
 	}, 'rotate around own Y axis, optimized' );
 	# quarter rotation around Z axis should leave XV pointing at Y and YV pointing at -X
-	is( space->rotate_zv(.25), object {
+	is( space->rot_zv(.25), object {
 		call is_normal => T;
 		call xv => vec_check(0,1,0);
 		call yv => vec_check(-1,0,0);
 		call zv => vec_check(0,0,1);
 	}, 'rotate around own Z axis, optimized' );
 	# Now test the non-optimized code path when the axes are not normal eigenvectors.
-	is( space->scale(5)->rotate_xv(.25), object {
+	is( space->scale(5)->rot_xv(.25), object {
 		call is_normal => F;
 		call xv => vec_check(5,0,0);
 		call yv => vec_check(0,0,5);
 		call zv => vec_check(0,-5,0);
 	}, 'rotate around own X axis' );
 	# quarter rotation around Y axis should move z to point at x
-	is( space->scale(5)->rotate_yv(.25), object {
+	is( space->scale(5)->rot_yv(.25), object {
 		call is_normal => F;
 		call xv => vec_check(0,0,-5);
 		call yv => vec_check(0,5,0);
 		call zv => vec_check(5,0,0);
 	}, 'rotate around own Y axis' );
 	# quarter rotation around Z axis should leave XV pointing at Y and YV pointing at -X
-	is( space->scale(5)->rotate_zv(.25), object {
+	is( space->scale(5)->rot_zv(.25), object {
 		call is_normal => F;
 		call xv => vec_check(0,5,0);
 		call yv => vec_check(-5,0,0);

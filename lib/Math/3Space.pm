@@ -15,28 +15,40 @@ XSLoader::load('Math::3Space', $Math::3Space::VERSION);
   use Math::3Space 'vec3', 'space';
   my $s1= space();
   my $s2= space($s1);
+  my $s3= $s2->space->rotate_z(.25)->translate(2,2);
   
   # changes relative to parent space
   $s1->reset; # to identity
-  $s1->move([1,2,3]);
-  $s1->scale($uniform_scale);
-  $s1->scale($xs, $ys, $zs);
-  $s1->rotate($angle, $vector);
-  $s1->orient($xvec, $yvec, $zvec);
+  $s1->translate(1,2,3);          # alias 'tr'
+  $s1->rotate($angle, $vector);   # alias 'rot'
+  $s1->orient($xv, $yv, $zv);
   
   # changes relative to itself
-  $s1->move_rel([1,2,3]);  
-  $s1->rotate_rel($yaw, $pitch, $roll);
-  $s1->scale_rel($uniform_scale);
-  $s1->rotate_yv($yaw);
-  $s1->rotate_xv($pitch);
-  $s1->rotate_zv($roll);
-  $s1->orient_rel($xvec, $yvec, $zvec);
+  $s1->scale($uniform_scale);
+  $s1->scale($xs, $ys, $zs);
+  $s1->set_scale(...);
+  $s1->travel($x,$y,$z);          # alias 'go'
+  $s1->rotate_xv($angle);
+  $s1->rotate_yv($angle);
+  $s1->rotate_zv($angle);
   
-  # Translate coordinates between spaces
-  $s2_vec= $s2->project_point($s1_vec);
-  $s2->project_point_inplace($s1_vec);
-  $s2->reparent(undef); # change parent, preserve obsolute orientation
+  # Transform coordinates between spaces
+  $local_point= $s1->project($global_point);
+  $global_point= $s1->unproject($local_point);
+  $s1->project_inplace($point);
+  $local_vector= $s1->project_vector($global_vector);
+  $global_vector= $s1->unproject_vector($local_vector);
+  
+  # Create a custom space that condenses multiple space transformations
+  $inner= space;
+  $inner2= $inner->space;
+  $inner3= $inner2->space;
+  $combined= $inner3->clone->reparent($s1);
+  # you can now directly project '$s1' points into '$combined'
+  # and it is the same as a chain of unprojecting from $s1,
+  # then projecting into $inner, $inner2, and $inner3,
+  # but much faster.
+  $combined->project_inplace($s1_pt);
   
   # Interoperate with OpenGL
   @float16= $s1->get_4x4_projection;
@@ -95,19 +107,12 @@ Construct a space (optionally within C<$parent>) initialized to an identity:
 
 Initialize a space from raw attributes.
 
-=head2 new_from_matrix
-
-  $space= Math::3Space->new_from_matrix(\@vals);
-
-Takes a 4x4 matrix as used by OpenGL and converts it to a 3Space.  Skew factors are lost by
-this process.  You can provide an array of 16 values (column major order) or an array of arrays.
-
 =head1 ATTRIBUTES
 
 =head2 parent
 
 Optional reference to parent coordinate space.  The origin and each of the axis vectors are
-described in terms of the parent coordiante space.  A parent of C<undef> means the space is
+described in terms of the parent coordinate space.  A parent of C<undef> means the space is
 described in terms of global absolute coordiantes.
 
 =head2 parent_count
@@ -121,16 +126,19 @@ The C<< [x,y,z] >> vector (point) of this space's origin in terms of the parent 
 
 =head2 xv
 
-The C<< [x,y,z] >> unit vector of the X axis (typically understood to be "rightward")
+The C<< [x,y,z] >> vector of the X axis (often named "I" in math text)
 
 =head2 yv
 
-The C<< [x,y,z] >> unit vector of the Y axis (typically understood to point "upward")
+The C<< [x,y,z] >> vector of the Y axis (often named "J" in math text)
 
 =head2 zv
 
-The C<< [x,y,z] >> unit vector of the Z axis (typically understood to point "outward" toward
-the eyes of the viewer)
+The C<< [x,y,z] >> vector of the Z axis (often named "K" in math text)
+
+=head2 is_normal
+
+Returns true if all axis vectors are unit-length and orthagonal to eachother.
 
 =head1 METHODS
 
@@ -144,37 +152,62 @@ Return a new space describing an identity, with the current object as its parent
 
 =head2 reparent
 
-Project this coordiante space into a different parent coordinate space, including C<undef> to
-reference global absolute coordiantes.  (This is named 'reparent' rather than 'set_parent' to
-emphasize that it changes the whole object, not just the parent attribute)
+Project this coordiante space into a different parent coordinate space.  After the projection,
+this space still refers to the same global position and orientation as before, but it is just
+described in terms of a different parent coordinate space.
 
-=head2 project_point
+For example, in a 3D game where a player is riding in a vehicle, the parent of the player's
+3D space is the vehicle, and the parent space of the vehicle is the ground.
+If the player jumps off the vehicle, you would call C<< $player->reparent($ground); >> to keep
+the player at their current position, but begin describing them in terms of the ground.
 
-  @local= $space->project_point( $vec1, $vec2, ... );
-  @arrayrefs= $space->project_point( [$x,$y,$z], [$x,$y,$z], ... );
+A C<$parent> of C<undef> means "global coordinates".
+
+=head2 project
+
+  @local= $space->project( $vec1, $vec2, ... );
+  @local= $space->project( [$x,$y,$z], [$x,$y,$z], ... );
+  @parent= $space->unproject( $localpt, ... );
+  $space->project_inplace( $pt1, $pt2, ... );
+  $space->unproject_vector_inplace( $vec1, $vec2, ... );
 
 Project one or more points into this coordinate space.  The points are assumed to be defined
 in the parent 3Space (i.e. siblings to the origin of this 3Space)  This subtracts the origin
 of this space from the point creating a vector, then projects the vector as per
 L<project_vector>.  The returned list is the same length and format as the list passed to
-this function, e.g. if you supply Vector objects you get back vector objects, and likewise for
+this function, e.g. if you supply Vector objects you get back Vector objects, and likewise for
 arrayrefs.
 
-=head2 project_vector
+Unproject performs the opposite operation, taking a local point or vector and mapping out to
+parent coordinates.
 
-Same as L</project_point> but the L</origin> is not subtracted before the projection. So,
-vectors that were acting as directional indicators will still be indicating that direction
-from the perspective of this 3Space.
+The C<_vector> variants do not add/subtract L</origin>, so vectors that were acting as
+directional indicators will still be indicating that direction afterward regardless of this
+space's C<origin>.
 
-=head2 project_point_inplace
+The C<_inplace> variants modify the points or vectors and return C<$self> for method chaining.
 
-  $space->project_point_inplace( $vec1, $vec2, ... );
+Variants:
 
-Like L</project_point>, but modifies the supplied parameters.
+=over
 
-=head2 project_vector_inplace
+=item project
 
-Like L</project_vector>, but modifies the supplied parameters.
+=item project_inplace
+
+=item project_vector
+
+=item project_vector_inplace
+
+=item unproject
+
+=item unproject_inplace
+
+=item unproject_vector
+
+=item unproject_vector_inplace
+
+=back
 
 =head2 normalize
 
@@ -184,21 +217,31 @@ Ensure that the eigenvectors are unit length and orthagonal to eachother.  The a
   * xv = yv cross zv, and make it a unit vector
   * yv = xv cross zv, and make it a unit vector
 
-=head2 move
+=head2 translate
 
-  $space->move($x, $y, $z);
-  $space->move([$x, $y, $z]);
-  $space->move($vec);
+  $space->translate($x, $y, $z);
+  $space->translate([$x, $y, $z]);
+  $space->translate($vec);
+  # alias 'tr'
+  $space->tr(...);
 
 Translate the origin of the coordiante space, in terms of parent coordinates.
 
-=head2 move_rel
+=for Pod::Coverage tr
 
-  $space->move_rel($x, $y, $z);
-  $space->move_rel([$x, $y, $z]);
-  $space->move_rel($vec);
+=head2 travel
 
-Translate the origin of the coordiante space in terms of its own axes.
+  $space->travel($x, $y, $z);
+  $space->travel([$x, $y, $z]);
+  $space->travel($vec);
+  # alias 'go'
+  $space->go(...);
+
+Translate the origin of the coordiante space in terms of its own coordinates.
+e.g. if your L</zv> vector is being used as "forward", you can make an object travel
+forward with C<< $space->travel(0,0,1) >>.
+
+=for Pod::Coverage go
 
 =head2 set_scale
 
@@ -217,44 +260,42 @@ vectors so that the scale is identical to the parent coordinate space.
   $space->scale([$x, $y, $z]);
   $space->scale($vector);
 
-Scale the axes of this space.
+Scale the axes of this space by a multiplier to the existing scale.
 
 =head2 rotate
 
-  $space->rotate($revolutions, 'x');
-  $space->rotate($revolutions, 'y');
-  $space->rotate($revolutions, 'z');
-  $space->rotate($revolutions, 'xv');
-  $space->rotate($revolutions, 'yv');
-  $space->rotate($revolutions, 'zv');
-  $space->rotate($revolutions, $vec);
   $space->rotate($revolutions, $x, $y, $z);
+  $space->rotate($revolutions, [$x, $y, $z]);
+  $space->rotate($revolutions, $vec);
+  $space->rot(...); # shorthand
+  $space->rot_x($revolutions);
+  $space->rot_xv($revolutions);
 
 This rotates the C<xv>, C<yv>, and C<zv> by an angle (measured in rotations rather than degrees
 or radians, so .25 is a quarter rotation) relative to some other vector.
 
-Vectors 'x', 'y', or 'z' refer to the parent coordinate space axes.  'xv', 'yv', or 'zv' refer
-to the attributes of this coordinate space. (i.e. rotate it around its own axis)
+The vector is defined in terms of the parent coordinate space.  If you want to rotate around an
+arbitrary vector defined in *local* coordinates, just unproject it out to the parent coordiante
+space first.
 
-If you supply C<$vec> or C<< ($x,$y,$z) >> they are considered as Parent coordiantes.  If you
-want to rotate around an arbitrary vector *within* this coordinate sspace, just project it out
-to the parent coordiante space first.
+The following (more efficient) variants are available for rotating about the parent's axes or
+this space's own axes:
 
-The following (slightly more efficient) aliases are available:
+=for Pod::Coverage rot
 
 =over
 
-=item rotate_x
+=item rot_x
 
-=item rotate_y
+=item rot_y
 
-=item rotate_z
+=item rot_z
 
-=item rotate_xv
+=item rot_xv
 
-=item rotate_yv
+=item rot_yv
 
-=item rotate_zv
+=item rot_zv
 
 =back
 

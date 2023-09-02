@@ -652,13 +652,15 @@ reparent(space, parent)
 		XSRETURN(1);
 
 SV*
-move(space, x_or_vec, y=NULL, z=NULL)
+translate(space, x_or_vec, y=NULL, z=NULL)
 	m3s_space_t *space
 	SV *x_or_vec
 	SV *y
 	SV *z
 	ALIAS:
-		Math::3Space::move_rel = 1
+		Math::3Space::tr = 0
+		Math::3Space::travel = 1
+		Math::3Space::go = 1
 	INIT:
 		NV vec[3], *matp;
 	PPCODE:
@@ -669,18 +671,18 @@ move(space, x_or_vec, y=NULL, z=NULL)
 		} else {
 			m3s_read_vector_from_sv(vec, x_or_vec);
 		}
-		if (ix == 0) {
-			matp= SPACE_ORIGIN(space);
-			*matp++ += vec[0];
-			*matp++ += vec[1];
-			*matp++ += vec[2];
-		} else {
+		if (ix) {
 			matp= space->mat;
 			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
 			++matp;
 			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
 			++matp;
 			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
+		} else {
+			matp= SPACE_ORIGIN(space);
+			*matp++ += vec[0];
+			*matp++ += vec[1];
+			*matp++ += vec[2];
 		}
 		XSRETURN(1);
 
@@ -691,7 +693,7 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 	SV *yscale
 	SV *zscale
 	ALIAS:
-		math::3Space::set_scale = 1
+		Math::3Space::set_scale = 1
 	INIT:
 		NV vec[3], s, m, *matp= SPACE_XV(space);
 		size_t i;
@@ -728,6 +730,8 @@ rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 	SV *z
 	INIT:
 		m3s_vector_t vec;
+	ALIAS:
+		Math::3Space::rot = 0
 	PPCODE:
 		if (y) {
 			if (!z) croak("Missing z coordinate in space->rotate(angle, x, y, z)");
@@ -742,15 +746,15 @@ rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 		XSRETURN(1);
 
 SV*
-rotate_x(space, angle)
+rot_x(space, angle)
 	m3s_space_t *space
 	NV angle
 	ALIAS:
-		Math::3Space::rotate_y = 1
-		Math::3Space::rotate_z = 2
-		Math::3Space::rotate_xv = 3
-		Math::3Space::rotate_yv = 4
-		Math::3Space::rotate_zv = 5
+		Math::3Space::rot_y = 1
+		Math::3Space::rot_z = 2
+		Math::3Space::rot_xv = 3
+		Math::3Space::rot_yv = 4
+		Math::3Space::rot_zv = 5
 	INIT:
 		NV *matp, *matp2, tmp1, tmp2;
 		size_t ofs1, ofs2;
@@ -775,7 +779,7 @@ rotate_x(space, angle)
 			matp[ofs1]= tmp1;
 			matp[ofs2]= tmp2;
 		} else {
-			m3s_space_self_rotate(space, s, c, ix % 3);
+			m3s_space_self_rotate(space, s, c, ix - 3);
 		}
 		XSRETURN(1);
 
