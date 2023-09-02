@@ -19,6 +19,7 @@ typedef struct m3s_space *m3s_space_or_null;
 #define SPACE_ORIGIN(s) ((s)->mat + 9)
 struct m3s_space {
 	NV mat[12];
+	int is_normal; // -1=UNKNOWN, 0=FALSE, 1=TRUE
 	// These pointers must be refreshed by m3s_space_recache_parent
 	// before they can be used after any control flow outside of XS.
 	struct m3s_space *parent;
@@ -27,12 +28,15 @@ struct m3s_space {
 
 static const m3s_space_t m3s_identity= {
 	1,0,0, 0,1,0, 0,0,1, 0,0,0,
+	1,
 	NULL,
-	0
+	0,
 };
 
 typedef NV m3s_vector_t[3];
 typedef NV *m3s_vector_p;
+
+static const NV NV_tolerance = 1e-14;
 
 void m3s_space_init(m3s_space_t *space) {
 	memcpy(space, &m3s_identity, sizeof(*space));
@@ -51,6 +55,17 @@ static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
 	if (mag1 == 0 || mag2 == 0)
 		croak("Can't calculate dot product of vector with length == 0");
 	return prod / sqrt(mag1 * mag2);
+}
+
+static int m3s_space_check_normal(m3s_space_t *sp) {
+	sp->is_normal= 0;
+	for (NV *vec= sp->mat+6, *pvec= sp->mat; vec > sp->mat; pvec= vec, vec -= 3) {
+		if (fabs(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2] - 1) > NV_tolerance)
+			return false;
+		if ((vec[0]*pvec[0] + vec[1]*pvec[1] + vec[2]*pvec[2]) > NV_tolerance)
+			return false;
+	}
+	return sp->is_normal= 1;
 }
 
 static inline void m3s_space_project_vector(m3s_space_t *sp, NV *vec) {
@@ -216,6 +231,43 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle, m3s_vector_p axis) {
 	}
 }
 
+static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, int axis_idx) {
+	NV *axis= space->mat + axis_idx*3;
+	m3s_vector_t vec1, vec2;
+
+	if (space->is_normal == -1)
+		m3s_space_check_normal(space);
+	if (!space->is_normal) {
+		m3s_space_rotate(space, angle_sin, angle_cos, space->mat + axis_idx*3);
+	} else {
+		// Axes are all unit vectors, orthagonal to eachother, and can skip setting up a
+		// custom rotation matrix.  Just define the vectors inside the space post-rotation,
+		// then project them out of the space.
+		if (axis_idx == 0) { // around XV, Y -> Z
+			vec1[0]= 0; vec1[1]=  angle_cos; vec1[2]= angle_sin;
+			m3s_space_unproject_vector(space, vec1);
+			vec2[0]= 0; vec2[1]= -angle_sin; vec2[2]= angle_cos;
+			m3s_space_unproject_vector(space, vec2);
+			memcpy(SPACE_YV(space), vec1, sizeof(vec1));
+			memcpy(SPACE_ZV(space), vec2, sizeof(vec2));
+		} else if (axis_idx == 1) { // around YV, Z -> X
+			vec1[0]= angle_sin; vec1[1]= 0; vec1[2]= angle_cos;
+			m3s_space_unproject_vector(space, vec1);
+			vec2[0]= angle_cos; vec2[1]= 0; vec2[2]= -angle_sin;
+			m3s_space_unproject_vector(space, vec2);
+			memcpy(SPACE_ZV(space), vec1, sizeof(vec1));
+			memcpy(SPACE_XV(space), vec2, sizeof(vec2));
+		} else { // around ZV, X -> Y
+			vec1[0]=  angle_cos; vec1[1]= angle_sin; vec1[2]= 0;
+			m3s_space_unproject_vector(space, vec1);
+			vec2[0]= -angle_sin; vec2[1]= angle_cos; vec2[2]= 0;
+			m3s_space_unproject_vector(space, vec2);
+			memcpy(SPACE_XV(space), vec1, sizeof(vec1));
+			memcpy(SPACE_YV(space), vec2, sizeof(vec2));
+		}
+	}
+}
+
 /**********************************************************************************************\
 * Typemap code that converts from Perl objects to C structs and back
 * All instances of Math::3Space have a magic-attached struct m3s_space_t
@@ -265,7 +317,7 @@ static const MGVTBL m3s_space_magic_vt= {
 static m3s_space_t* m3s_get_magic_space(SV *obj, int flags) {
 	SV *sv;
 	MAGIC* magic;
-    m3s_space_t *space;
+	m3s_space_t *space;
 	if (!sv_isobject(obj)) {
 		if (flags & OR_DIE)
 			croak("Not an object");
@@ -273,22 +325,23 @@ static m3s_space_t* m3s_get_magic_space(SV *obj, int flags) {
 	}
 	sv= SvRV(obj);
 	if (SvMAGICAL(sv)) {
-        /* Iterate magic attached to this scalar, looking for one with our vtable */
-        for (magic= SvMAGIC(sv); magic; magic = magic->mg_moremagic)
-            if (magic->mg_type == PERL_MAGIC_ext && magic->mg_virtual == &m3s_space_magic_vt)
-                /* If found, the mg_ptr points to the fields structure. */
-                return (m3s_space_t*) magic->mg_ptr;
-    }
-    if (flags & AUTOCREATE) {
-        Newxz(space, 1, m3s_space_t);
-        magic= sv_magicext(sv, NULL, PERL_MAGIC_ext, &m3s_space_magic_vt, (const char*) space, 0);
+		/* Iterate magic attached to this scalar, looking for one with our vtable */
+		for (magic= SvMAGIC(sv); magic; magic = magic->mg_moremagic)
+			if (magic->mg_type == PERL_MAGIC_ext && magic->mg_virtual == &m3s_space_magic_vt)
+				/* If found, the mg_ptr points to the fields structure. */
+				return (m3s_space_t*) magic->mg_ptr;
+	}
+	if (flags & AUTOCREATE) {
+		Newx(space, 1, m3s_space_t);
+		m3s_space_init(space);
+		magic= sv_magicext(sv, NULL, PERL_MAGIC_ext, &m3s_space_magic_vt, (const char*) space, 0);
 #ifdef USE_ITHREADS
-        magic->mg_flags |= MGf_DUP;
+		magic->mg_flags |= MGf_DUP;
 #endif
-        return space;
-    }
-    else if (flags & OR_DIE)
-        croak("Object lacks 'm3s_space_t' magic");
+		return space;
+	}
+	else if (flags & OR_DIE)
+		croak("Object lacks 'm3s_space_t' magic");
 	return NULL;
 }
 
@@ -399,6 +452,7 @@ _init(obj, source=NULL)
 					SPACE_ZV(space)[2]= 1;
 				if ((field= hv_fetch(attrs, "origin", 6, 0)) && *field && SvOK(*field))
 					m3s_read_vector_from_sv(SPACE_ORIGIN(space), *field);
+				space->is_normal= -1;
 			} else
 				croak("Invalid source for _init");
 		} else {
@@ -428,16 +482,13 @@ space(parent=NULL)
 	INIT:
 		m3s_space_t *space;
 	CODE:
-		Newxz(space, 1, m3s_space_t);
-		SPACE_XV(space)[0]= 1;
-		SPACE_YV(space)[1]= 1;
-		SPACE_ZV(space)[2]= 1;
+		if (parent && SvOK(parent) && !m3s_get_magic_space(parent, 0))
+			croak("Invalid parent, must be instance of Math::3Space");
+		Newx(space, 1, m3s_space_t);
+		m3s_space_init(space);
 		RETVAL= m3s_wrap_space(space);
-		if (parent) {
-			if (!m3s_get_magic_space(parent, 0))
-				croak("Invalid parent, must be instance of Math::3Space");
+		if (parent && SvOK(parent))
 			hv_store((HV*)SvRV(RETVAL), "parent", 6, newSVsv(parent), 0);
-		}
 	OUTPUT:
 		RETVAL
 
@@ -463,6 +514,7 @@ xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 			} else {
 				m3s_read_vector_from_sv(vec, x_or_vec);
 			}
+			space->is_normal= -1;
 			// leave $self on stack as return value
 		} else {
 			ST(0)= sv_2mortal(m3s_wrap_vector(vec));
@@ -534,6 +586,7 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 			*matp++ *= s;
 			*matp++ *= s;
 		}
+		space->is_normal= -1;
 		XSRETURN(1);
 
 SV*
@@ -569,14 +622,14 @@ rotate_x(space, angle)
 		Math::3Space::rotate_yv = 4
 		Math::3Space::rotate_zv = 5
 	INIT:
-		NV *matp, *matp2, tmp1, tmp2, tmpvec1[3], tmpvec2[3];
+		NV *matp, *matp2, tmp1, tmp2;
 		size_t ofs1, ofs2;
 		NV s= sin(angle * 2 * M_PI), c= cos(angle * 2 * M_PI);
 	PPCODE:
 		if (ix < 3) { // Rotate around axis of parent
 			matp= SPACE_XV(space);
-			ofs1= ix == 0? 1 : 0;
-			ofs2= ix == 2? 1 : 2;
+			ofs1= (ix+1) % 3;
+			ofs2= (ix+2) % 3;
 			tmp1= c * matp[ofs1] - s * matp[ofs2];
 			tmp2= s * matp[ofs1] + c * matp[ofs2];
 			matp[ofs1]= tmp1;
@@ -592,20 +645,7 @@ rotate_x(space, angle)
 			matp[ofs1]= tmp1;
 			matp[ofs2]= tmp2;
 		} else {
-			matp=  ix == 3? SPACE_YV(space) : SPACE_XV(space);
-			matp2= ix == 5? SPACE_YV(space) : SPACE_ZV(space);
-			tmpvec1[0]= c * matp[0] - s * matp2[0];
-			tmpvec1[1]= c * matp[1] - s * matp2[1];
-			tmpvec1[2]= c * matp[2] - s * matp2[2];
-			tmpvec2[0]= s * matp[0] + c * matp2[0];
-			tmpvec2[1]= s * matp[1] + c * matp2[1];
-			tmpvec2[2]= s * matp[2] + c * matp2[2];
-			matp[0]= tmpvec1[0];
-			matp[1]= tmpvec1[1];
-			matp[2]= tmpvec1[2];
-			matp2[0]= tmpvec2[0];
-			matp2[1]= tmpvec2[1];
-			matp2[2]= tmpvec2[2];
+			m3s_space_self_rotate(space, s, c, ix % 3);
 		}
 		XSRETURN(1);
 
