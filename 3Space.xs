@@ -38,16 +38,19 @@ typedef NV *m3s_vector_p;
 
 static const NV NV_tolerance = 1e-14;
 
+// Initialize to identity, known to be normal
 void m3s_space_init(m3s_space_t *space) {
 	memcpy(space, &m3s_identity, sizeof(*space));
 }
 
+// Vector cross product, C = A cross B
 static inline void m3s_vector_cross(NV *dest, NV *vec1, NV *vec2) {
 	dest[0]= vec1[1]*vec2[2] - vec1[2]*vec2[1];
 	dest[1]= vec1[2]*vec2[0] - vec1[0]*vec2[2];
 	dest[2]= vec1[0]*vec2[1] - vec1[1]*vec2[0];
 }
 
+// Vector dot Product, N = A dot B
 static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
 	NV mag1= vec1[0]*vec1[0] + vec1[1]*vec1[1] + vec1[2]*vec1[2];
 	NV mag2= vec2[0]*vec2[0] + vec2[1]*vec2[1] + vec2[2]*vec2[2];
@@ -57,6 +60,12 @@ static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
 	return prod / sqrt(mag1 * mag2);
 }
 
+/* Check whether a space's axis vectors are unit length and orthagonal to
+ * eachother, and update the 'is_normal' flag on the space.
+ * Having this flag = 1 can optimize relative rotations later.
+ * The flag gets set to -1 any time an operation may have broken normality.
+ * Approx Cost: 4-19 load, 3-18 mul, 4-17 add, 1-2 stor
+ */
 static int m3s_space_check_normal(m3s_space_t *sp) {
 	sp->is_normal= 0;
 	for (NV *vec= sp->mat+6, *pvec= sp->mat; vec > sp->mat; pvec= vec, vec -= 3) {
@@ -68,12 +77,22 @@ static int m3s_space_check_normal(m3s_space_t *sp) {
 	return sp->is_normal= 1;
 }
 
+/* Project a vector from the parent coordinate space into this coordinate space.
+ * The vector is modified in-place.  The origin is not subtracted from a vector,
+ * as opposed to projecting a point (below)
+ * Approx Cost: 12 load, 9 mul, 6 add, 3 stor
+ */
 static inline void m3s_space_project_vector(m3s_space_t *sp, NV *vec) {
 	NV x= vec[0], y= vec[1], z= vec[2], *mat= sp->mat;
 	vec[0]= x * mat[0] + y * mat[1] + z * mat[2];
 	vec[1]= x * mat[3] + y * mat[4] + z * mat[5];
 	vec[2]= x * mat[6] + y * mat[7] + z * mat[8];
 }
+
+/* Project a point from the parent coordinate space into this coordinate space.
+ * The point is modified in-place.
+ * Approx Cost: 15 load, 9 fmul, 9 fadd, 3 stor
+ */
 static inline void m3s_space_project_point(m3s_space_t *sp, NV *vec) {
 	NV x, y, z, *mat= sp->mat;
 	x= vec[0] - mat[9];
@@ -83,6 +102,12 @@ static inline void m3s_space_project_point(m3s_space_t *sp, NV *vec) {
 	vec[1]= x * mat[3] + y * mat[4] + z * mat[5];
 	vec[2]= x * mat[6] + y * mat[7] + z * mat[8];
 }
+
+/* Project a sibling coordinate space into this coordinate space.
+ * (sibling meaning they share the same parent coordinate space)
+ * The sibling will now be a child coordinate space.
+ * Approx Cost: 53 load, 33 fmul, 27 fadd, 14 stor
+ */
 static void m3s_space_project_space(m3s_space_t *sp, m3s_space_t *peer) {
 	m3s_space_project_vector(sp, SPACE_XV(peer));
 	m3s_space_project_vector(sp, SPACE_YV(peer));
@@ -92,18 +117,33 @@ static void m3s_space_project_space(m3s_space_t *sp, m3s_space_t *peer) {
 	peer->n_parents= sp->n_parents + 1;
 }
 
+/* Un-project a local vector of this coordinate space out to the parent
+ * coordinate space.  The vector remains a directional vector, without
+ * getting the origin point added to it.
+ * Approx Cost: 12 load, 9 fmul, 6 fadd, 3 stor
+ */
 static inline void m3s_space_unproject_vector(m3s_space_t *sp, NV *vec) {
 	NV x= vec[0], y= vec[1], z= vec[2], *mat= sp->mat;
 	vec[0]= x * mat[0] + y * mat[3] + z * mat[6];
 	vec[1]= x * mat[1] + y * mat[4] + z * mat[7];
 	vec[2]= x * mat[2] + y * mat[5] + z * mat[8];
 }
+
+/* Un-project a local point of this coordiante space out to the parent
+ * coordinate space.
+ * Approx Cost: 15 load, 9 fmul, 9 fadd, 3 stor
+ */
 static inline void m3s_space_unproject_point(m3s_space_t *sp, NV *vec) {
 	NV x= vec[0], y= vec[1], z= vec[2], *mat= sp->mat;
 	vec[0]= x * mat[0] + y * mat[3] + z * mat[6] + mat[9];
 	vec[1]= x * mat[1] + y * mat[4] + z * mat[7] + mat[10];
 	vec[2]= x * mat[2] + y * mat[5] + z * mat[8] + mat[11];
 }
+
+/* Un-project a child coordinate space out of this coordinate space so that it
+ * will become a peer of this space (sharing a parent)
+ * Approx Cost: 53 load, 33 fmul, 27 fadd, 14 stor
+ */
 static void m3s_space_unproject_space(m3s_space_t *sp, m3s_space_t *inner) {
 	m3s_space_unproject_vector(sp, SPACE_XV(inner));
 	m3s_space_unproject_vector(sp, SPACE_YV(inner));
@@ -113,6 +153,9 @@ static void m3s_space_unproject_space(m3s_space_t *sp, m3s_space_t *inner) {
 	inner->n_parents= sp->n_parents;
 }
 
+/* Assuming the ->parent pointer cache is current but the ->n_parent is not,
+ * this walks down the linked list (twice) and updates it.
+ */
 static void m3s_space_recache_n_parents(m3s_space_t *space) {
 	m3s_space_t *cur;
 	int depth= -1;
@@ -123,8 +166,12 @@ static void m3s_space_recache_n_parents(m3s_space_t *space) {
 	if (!(depth == -1)) croak("assertion failed: depth == -1");
 }
 
-// from_space and to_space may be NULL.
-// MUST call m3s_space_recache_parent on each (non null) space before calling this method!
+/* Given two spaces (with valid ->parent caches) project/unproject the space so that
+ * it represents the same global coordiantes while now being described in terms of
+ * a new parent coordinate space.  'parent' may be NULL, to move 'space' to become a
+ * top-level space
+ * MUST call m3s_space_recache_parent on each (non null) space before calling this method!
+ */
 static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
 	m3s_space_t sp_tmp, *common_parent;
 	// Short circuit for nothing to do
@@ -160,6 +207,11 @@ static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
 	// cache, which is why those caches need rebuilt before calling this function.
 }
 
+/* Rotate the space around an arbitrary vector in the parent space.
+ * Angle is provided as direct sine and cosine factors.
+ * The axis does not need to be a normal vector.
+ * Approx Cost: 87-99 fmul, 1-2 fdiv, 56-62 fadd, 1 fabs, 1-2 sqrt
+ */
 static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s_vector_p axis) {
 	NV mag_sq, scale, *vec, tmp0, tmp1;
 	m3s_space_t r;
@@ -207,6 +259,13 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
 	}
 }
 
+/* Rotate the space around one of its own axes.  axis_idx: 0 (xv), 1 (yv) or 2 (zv)
+ * Angle is supplied as direct sine / cosine values.
+ * If the space is_normal (unit-length vectors orthagonal to eachother) this uses a very
+ * efficient optimization.  Else it falls back to the full m3s_space_rotate function.
+ * Approx Cost, if normal: 18 fmul, 12 fadd
+ * Approx Cost, else:      87-99 fmul, 1-2 fdiv, 56-62 fadd, 1 fabs, 1-2 sqrt
+ */
 static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, int axis_idx) {
 	NV *axis= space->mat + axis_idx*3;
 	m3s_vector_t vec1, vec2;
@@ -250,7 +309,7 @@ static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos
 * All vectors objects are a blessed scalar ref aligned to hold double[3] in the PV
 \**********************************************************************************************/
 
-// destructor for m3s_space_t
+// destructor for m3s_space_t magic
 static int m3s_space_magic_free(pTHX_ SV* sv, MAGIC* mg) {
 	m3s_space_t *space;
     if (mg->mg_ptr) {
@@ -260,11 +319,15 @@ static int m3s_space_magic_free(pTHX_ SV* sv, MAGIC* mg) {
     return 0; // ignored anyway
 }
 #ifdef USE_ITHREADS
+// If threading system needs to clone a Space, clone the struct but don't bother
+// fixing the parent cache.  That should always pass through code that calls
+// m3s_space_recache_parent between when this happens and when ->parent gets used.
 static int m3s_space_magic_dup(pTHX_ MAGIC *mg, CLONE_PARAMS *param) {
     m3s_space_t *space;
 	PERL_UNUSED_VAR(param);
 	Newxz(space, 1, m3s_space_t);
 	memcpy(space, mg->mg_ptr, sizeof(m3s_space_t));
+	space->parent= NULL; // ensure no possibility of cross-thread bugs
 	mg->mg_ptr= (char*) space;
     return 0;
 };
@@ -272,7 +335,8 @@ static int m3s_space_magic_dup(pTHX_ MAGIC *mg, CLONE_PARAMS *param) {
 #define m3s_space_magic_dup NULL
 #endif
 
-// magic table for m3s_space
+// magic virtual method table for m3s_space
+// Pointer to this struct is also used as an ID for type of magic
 static MGVTBL m3s_space_magic_vt= {
 	NULL, /* get */
 	NULL, /* write */
@@ -323,9 +387,9 @@ static m3s_space_t* m3s_get_magic_space(SV *obj, int flags) {
 	return NULL;
 }
 
-// Return existing Node object, or create a new one.
+// Create a new Math::3Space object, to become the owner of the supplied space struct.
 // Returned SV is a reference with active refcount, which is what the typemap
-// wants for returning a "struct TreeRBXS_item*" to perl-land
+// wants for returning a "m3s_space_t*" to perl-land
 static SV* m3s_wrap_space(m3s_space_t *space) {
 	SV *obj;
 	MAGIC *magic;
@@ -344,6 +408,10 @@ static SV* m3s_wrap_space(m3s_space_t *space) {
 	return obj;
 }
 
+// Create a new Math::3Space::Vector object, which is a blessed scalar-ref containing
+// the aligned bytes of three NV (usually doubles)
+// This code assumes that 8-byte alignment is good enough even if the NV type is
+//  long double
 #define DOUBLE_ALIGNMENT_MASK 7
 static SV* m3s_wrap_vector(m3s_vector_p vec_array) {
 	SV *obj, *buf;
@@ -363,6 +431,8 @@ static SV* m3s_wrap_vector(m3s_vector_p vec_array) {
 	return obj;
 }
 
+// Return a pointer to the aligned NV[3] inside the scalar ref 'vector'.
+// These can be written directly to modify the vector's value.
 static NV * m3s_vector_get_array(SV *vector) {
 	char *p= NULL;
 	STRLEN len= 0;
@@ -373,6 +443,9 @@ static NV * m3s_vector_get_array(SV *vector) {
 	return (NV*) p;
 }
 
+// Read the values of a vector out of perl data 'in' and store them in 'vec'
+// This should be extended to handle any sensible format a user might supply vectors.
+// It currently supports arrayref-of-SvNV and vector objects.
 static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 	SV **el;
 	AV *vec_av;
@@ -395,6 +468,11 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 		croak("Can't read vector from %s", sv_reftype(in, 1));
 }
 
+// Walk the perl-side chain of $space->parent->parent->... and update the C-side
+// parent pointers and n_parents counters.  This needs called any time we come back
+// from perl-land because scripts might update these references at any time, and
+// it would require too much magic to update the C pointers as that happened.
+// So, just let them get out of sync, then re-cache them here.
 static void m3s_space_recache_parent(SV *space_sv) {
 	m3s_space_t *space= NULL, *prev= NULL;
 	SV **field, *cur= space_sv;
@@ -410,12 +488,13 @@ static void m3s_space_recache_parent(SV *space_sv) {
 		space->parent= NULL;
 		if (prev) {
 			prev->parent= space;
-			if (++depth > 64) { // Check for cycles in the graph
+			if (++depth > 964) { // Check for cycles in the graph
 				if (!seen) seen= (HV*) sv_2mortal((SV*)newHV()); // hash will auto-garbage-collect
 				field= hv_fetch(seen, (char*)&space, sizeof(space), 1); // use pointer value as key
-				if (!field) croak("BUG");
-				if (*field) croak("Cycle detected in space->parent graph");
-				*field= &PL_sv_undef; // signal that we've been here with any pointer value
+				if (!field || !*field) croak("BUG");
+				if (SvOK(*field))
+					croak("Cycle detected in space->parent graph");
+				sv_setsv(*field, &PL_sv_yes); // signal that we've been here with any pointer value
 			}
 		}
 		field= hv_fetch((HV*) SvRV(cur), "parent", 6, 0);
@@ -552,9 +631,10 @@ reparent(space, parent)
 	SV *parent
 	INIT:
 		m3s_space_t *sp3= m3s_get_magic_space(space, OR_DIE), *psp3, *cur;
+		SV **field;
 	PPCODE:
 		m3s_space_recache_parent(space);
-		if (parent && SvOK(parent)) {
+		if (SvOK(parent)) {
 			psp3= m3s_get_magic_space(parent, OR_DIE);
 			m3s_space_recache_parent(parent);
 			// Make sure this doesn't create a cycle
@@ -565,6 +645,7 @@ reparent(space, parent)
 		} else {
 			m3s_space_reparent(sp3, NULL);
 		}
+		hv_store((HV*) SvRV(space), "parent", 6, newSVsv(parent), 0);
 		XSRETURN(1);
 
 SV*
@@ -739,8 +820,8 @@ project_vector_inplace(space, ...)
 		SV **item, *x, *y, *z;
 	ALIAS:
 		Math::3Space::project_inplace = 1
-		Math::3Space::unproject_vector_inplace = 1
-		Math::3Space::unproject_inplace = 1
+		Math::3Space::unproject_vector_inplace = 2
+		Math::3Space::unproject_inplace = 3
 	PPCODE:
 		for (i= 1; i < items; i++) {
 			if (!SvROK(ST(i)))
