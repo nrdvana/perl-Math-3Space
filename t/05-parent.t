@@ -26,41 +26,52 @@ subtest parent_graph_checks => sub {
 	is( $spaces[-1]->parent_count, 90, 'space 100 has 90 parents now' );
 };
 
-my $sp1= space->rot_z(.125);
-my $sp2= $sp1->space->rot_z(.125);
-my $sp3= $sp2->space->rot_z(.125);
-my $sp4= $sp3->space->rot_z(.125);
+subtest unproject_space => sub {
+	my $sp1= space->rot_z(.125);
+	my $sp2= $sp1->space->rot_z(.125);
+	my $sp3= $sp2->space->rot_z(.125);
+	my $sp4= $sp3->space->rot_z(.125);
 
-# Space 4 should be a complete .5 rotation, with X and Y axes pointing opposite direction.
-my $v= vec3(1,0,0);
-$_->unproject_inplace($v) for $sp4, $sp3, $sp2, $sp1;
-is( $v, vec_check(-1,0,0), 'unproject each makes .5 rotation' );
+	# Space 4 should be a complete .5 rotation, with X and Y axes pointing opposite direction.
+	my $v= vec3(1,0,0);
+	$_->unproject_inplace($v) for $sp4, $sp3, $sp2, $sp1;
+	is( $v, vec_check(-1,0,0), 'unproject each makes .5 rotation' );
 
-# Now reparent space 4 back out to global
-$sp4->reparent(undef);
-is( $sp4->parent_count, 0, 'sp4 has no parents' );
-# Now unprojecting from sp4 alone should make a .5 rotation.
-is( $sp4->unproject(vec3(1,0,0)), vec_check(-1,0,0), 'unproject sp4 makes .5 rotation' );
-is( $sp4->project(vec3(1,0,0)), vec_check(-1,0,0), 'project sp4 also makes .5 rotation' );
+	# Now reparent space 4 to be global
+	$sp4->reparent(undef);
+	is( $sp4->parent_count, 0, 'sp4 has no parents' );
+	# Now unprojecting from sp4 alone should make a .5 rotation.
+	is( $sp4->unproject(vec3(1,0,0)), vec_check(-1,0,0), 'unproject sp4 makes .5 rotation' );
+};
 
-# put it back
-$sp4->reparent($sp3);
-is( $sp4->parent_count, 3, 'sp4 back to 3 parents' );
+subtest project_space => sub {
+	my $sp1= space->rot(.125, [1,1,1])->tr(5,0,0)->rot_z(.4)->tr(5,4,3);
+	my $sp2= $sp1->space->tr(0,2,1)->rot_z(.2345);
+	# take a second space in global parent space, and project it into sp2
+	my $spb= space->tr(-1,-1,-1)->reparent($sp2);
+	# Now projecting => sp1 => sp2 => spb should result in the same as translating (1,1,1)
+	# no matter what sp1 or sp2 were.
+	my $vec= vec3(2,3,4);
+	$_->project_inplace($vec) for $sp1, $sp2, $spb;
+	is( $vec, vec_check(3,4,5), 'point is offset (1,1,1)' );
+};
 
-# Create a new branch of the tree
-my $sp2a= $sp1->space->rot_z(-.125);
-my $sp3a= $sp2a->space->rot_z(-.125);
-my $sp4a= $sp3a->space->rot_z(-.125);
-
-# Now, to project a point from sp4 to sp4a travels through six 1/8 rotations = 3/4
-$v= vec3(5,5,5);
-$_->unproject_inplace($v) for $sp4, $sp3, $sp2;
-$_->project_inplace($v) for $sp2a, $sp3a, $sp4a;
-is( $v, vec_check(5,-5,5), 'cross-project sp4 to sp4a makes .75 rotation' );
-
-# Should get the same result by reparenting sp4a into sp4 and projecting
-my $sp4b= $sp4a->clone->reparent($sp4);
-is( $sp4b->parent_count, 4, 'sp4b parents = 4' );
-is( $sp4b->project(vec3(5,5,5)), vec_check(5,-5,5), 'project sp4 => sp4b' );
+subtest reproject_space_via_common_parent => sub {
+	my $sp1= space->rot(.55, [1,2,3])->tr(4,0,4)->space->rot_x(.1);
+	my $sp2= $sp1->space->tr(-1,-1,-1);
+	my $sp3= $sp1->space->space->rot_y(.25);
+	# to take a point from sp3 and translate to sp2 should rotate .25 around Y, then
+	# translate by (1,1,1).
+	my $vec= vec3(1,1,1);
+	$sp3->unproject_inplace($vec);
+	$sp3->parent->unproject_inplace($vec);
+	$sp3->parent->parent->unproject_inplace($vec);
+	$sp2->parent->project_inplace($vec);
+	$sp2->project_inplace($vec);
+	is( $vec, vec_check(2,2,0), 'transform vec the long way' );
+	# now reparent a clone of sp2 into sp3 so that we can just project into that
+	my $sp2_in_sp3= $sp2->clone->reparent($sp3);
+	is( $sp2_in_sp3->project(vec3(1,1,1)), vec_check(2,2,0), 'transform vec the short way' );
+};
 
 done_testing;
