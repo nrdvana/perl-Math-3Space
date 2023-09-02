@@ -123,29 +123,6 @@ static void m3s_space_recache_n_parents(m3s_space_t *space) {
 	if (!(depth == -1)) croak("assertion failed: depth == -1");
 }
 
-#define AUTOCREATE 1
-#define OR_DIE     2
-static m3s_space_t* m3s_get_magic_space(SV *obj, int flags);
-
-static void m3s_space_recache_parent(SV *space_sv) {
-	m3s_space_t *space= NULL, *prev= NULL;
-	SV **field, *cur= space_sv;
-	while (cur && SvOK(cur)) {
-		prev= space;
-		if (!(
-			SvROK(cur) && SvTYPE(SvRV(cur)) == SVt_PVHV
-			&& (space= m3s_get_magic_space(cur, 0))
-		))
-			croak("'parent' is not a Math::3Space : %s", SvPV_nolen(cur));
-		if (prev)
-			prev->parent= space;
-		space->parent= NULL;
-		field= hv_fetch((HV*) SvRV(cur), "parent", 6, 0);
-		cur= field? *field : NULL;
-	}
-	m3s_space_recache_n_parents(m3s_get_magic_space(space_sv, OR_DIE));
-}
-
 // from_space and to_space may be NULL.
 // MUST call m3s_space_recache_parent on each (non null) space before calling this method!
 static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
@@ -183,38 +160,37 @@ static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
 	// cache, which is why those caches need rebuilt before calling this function.
 }
 
-static void m3s_space_rotate(m3s_space_t *space, NV angle, m3s_vector_p axis) {
-	NV c, s, mag, scale, *vec, tmp0, tmp1;
+static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s_vector_p axis) {
+	NV mag_sq, scale, *vec, tmp0, tmp1;
 	m3s_space_t r;
-	angle *= 2 * M_PI;
-	c= cos(angle);
-	s= sin(angle);
 
 	// Construct temporary coordinate space where 'zv' is 'axis'
-	mag= sqrt(axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]);
-	if (mag == 0)
+	mag_sq= axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2];
+	if (mag_sq == 0)
 		croak("Can't rotate around vector with 0 magnitude");
-	scale= 1/mag;
-	r.mat[6]= axis[0] * scale;
-	r.mat[7]= axis[1] * scale;
-	r.mat[8]= axis[2] * scale;
+	else if (fabs(mag_sq - 1) > NV_tolerance) {
+		scale= 1/sqrt(mag_sq);
+		r.mat[6]= axis[0] * scale;
+		r.mat[7]= axis[1] * scale;
+		r.mat[8]= axis[2] * scale;
+	}
 	// set y vector to any vector not colinear with z vector
 	r.mat[3]= 1;
 	r.mat[4]= 0;
 	r.mat[5]= 0;
 	// x = normalize( y cross z )
 	m3s_vector_cross(r.mat, r.mat+3, r.mat+6);
-	mag= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
-	if (mag < 1e-50) {
+	mag_sq= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
+	if (mag_sq < NV_tolerance) {
 		// try again with a different vector
 		r.mat[3]= 0;
 		r.mat[4]= 1;
 		m3s_vector_cross(r.mat, r.mat+3, r.mat+6);
-		mag= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
-		if (mag == 0)
+		mag_sq= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
+		if (mag_sq == 0)
 			croak("BUG: failed to find perpendicular vector");
 	}
-	scale= 1 / sqrt(mag);
+	scale= 1 / sqrt(mag_sq);
 	r.mat[0] *= scale;
 	r.mat[1] *= scale;
 	r.mat[2] *= scale;
@@ -223,8 +199,8 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle, m3s_vector_p axis) {
 	// Now for each axis vector, project it into this space, rotate it (around Z), and project it back out
 	for (vec=space->mat + 6; vec >= space->mat; vec-= 3) {
 		m3s_space_project_vector(&r, vec);
-		tmp0= c * vec[0] - s * vec[1];
-		tmp1= s * vec[0] + c * vec[1];
+		tmp0= angle_cos * vec[0] - angle_sin * vec[1];
+		tmp1= angle_sin * vec[0] + angle_cos * vec[1];
 		vec[0]= tmp0;
 		vec[1]= tmp1;
 		m3s_space_unproject_vector(&r, vec);
@@ -297,7 +273,7 @@ static int m3s_space_magic_dup(pTHX_ MAGIC *mg, CLONE_PARAMS *param) {
 #endif
 
 // magic table for m3s_space
-static const MGVTBL m3s_space_magic_vt= {
+static MGVTBL m3s_space_magic_vt= {
 	NULL, /* get */
 	NULL, /* write */
 	NULL, /* length */
@@ -314,6 +290,8 @@ static const MGVTBL m3s_space_magic_vt= {
 // The 'obj' should be a reference to a blessed SV.
 // Use AUTOCREATE to attach magic and allocate a struct if it wasn't present.
 // Use OR_DIE for a built-in croak() if the return value would be NULL.
+#define AUTOCREATE 1
+#define OR_DIE     2
 static m3s_space_t* m3s_get_magic_space(SV *obj, int flags) {
 	SV *sv;
 	MAGIC* magic;
@@ -417,6 +395,36 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 		croak("Can't read vector from %s", sv_reftype(in, 1));
 }
 
+static void m3s_space_recache_parent(SV *space_sv) {
+	m3s_space_t *space= NULL, *prev= NULL;
+	SV **field, *cur= space_sv;
+	HV *seen= NULL;
+	int depth= 0;
+	while (cur && SvOK(cur)) {
+		prev= space;
+		if (!(
+			SvROK(cur) && SvTYPE(SvRV(cur)) == SVt_PVHV
+			&& (space= m3s_get_magic_space(cur, 0))
+		))
+			croak("'parent' is not a Math::3Space : %s", SvPV_nolen(cur));
+		space->parent= NULL;
+		if (prev) {
+			prev->parent= space;
+			if (++depth > 64) { // Check for cycles in the graph
+				if (!seen) seen= (HV*) sv_2mortal((SV*)newHV()); // hash will auto-garbage-collect
+				field= hv_fetch(seen, (char*)&space, sizeof(space), 1); // use pointer value as key
+				if (!field) croak("BUG");
+				if (*field) croak("Cycle detected in space->parent graph");
+				*field= &PL_sv_undef; // signal that we've been here with any pointer value
+			}
+		}
+		field= hv_fetch((HV*) SvRV(cur), "parent", 6, 0);
+		cur= field? *field : NULL;
+	}
+	for (space= m3s_get_magic_space(space_sv, OR_DIE); space; space= space->parent)
+		space->n_parents= depth--;
+}
+
 /**********************************************************************************************\
 * Math::3Space Public API
 \**********************************************************************************************/
@@ -455,24 +463,22 @@ _init(obj, source=NULL)
 				space->is_normal= -1;
 			} else
 				croak("Invalid source for _init");
-		} else {
-			SPACE_XV(space)[0]= 1;
-			SPACE_YV(space)[1]= 1;
-			SPACE_ZV(space)[2]= 1;
 		}
 
 SV*
 clone(obj)
 	SV *obj
 	INIT:
-		m3s_space_t *space= m3s_get_magic_space(obj, OR_DIE);
+		m3s_space_t *space= m3s_get_magic_space(obj, OR_DIE), *space2;
 		HV *clone_hv;
 	CODE:
 		if (SvTYPE(SvRV(obj)) != SVt_PVHV)
 			croak("Invalid source object"); // just to be really sure before next line
 		clone_hv= newHVhv((HV*)SvRV(obj));
 		RETVAL= newRV_noinc((SV*)clone_hv);
-		sv_bless(RETVAL, gv_stashpv(sv_reftype(obj, 1), GV_ADD));
+		sv_bless(RETVAL, gv_stashpv(sv_reftype(SvRV(obj), 1), GV_ADD));
+		space2= m3s_get_magic_space(RETVAL, AUTOCREATE);
+		memcpy(space2, space, sizeof(*space2));
 	OUTPUT:
 		RETVAL
 
@@ -518,6 +524,46 @@ xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 			// leave $self on stack as return value
 		} else {
 			ST(0)= sv_2mortal(m3s_wrap_vector(vec));
+		}
+		XSRETURN(1);
+
+bool
+is_normal(space)
+	m3s_space_t *space
+	CODE:
+		if (space->is_normal == -1)
+			m3s_space_check_normal(space);
+		RETVAL= space->is_normal;
+	OUTPUT:
+		RETVAL
+
+int
+parent_count(space)
+	SV *space
+	CODE:
+		m3s_space_recache_parent(space);
+		RETVAL= m3s_get_magic_space(space, OR_DIE)->n_parents;
+	OUTPUT:
+		RETVAL
+
+SV*
+reparent(space, parent)
+	SV *space
+	SV *parent
+	INIT:
+		m3s_space_t *sp3= m3s_get_magic_space(space, OR_DIE), *psp3, *cur;
+	PPCODE:
+		m3s_space_recache_parent(space);
+		if (parent && SvOK(parent)) {
+			psp3= m3s_get_magic_space(parent, OR_DIE);
+			m3s_space_recache_parent(parent);
+			// Make sure this doesn't create a cycle
+			for (cur= psp3; cur; cur= cur->parent)
+				if (cur == sp3)
+					croak("Attempt to create a cycle: new 'parent' is a child of this space");
+			m3s_space_reparent(sp3, psp3);
+		} else {
+			m3s_space_reparent(sp3, NULL);
 		}
 		XSRETURN(1);
 
@@ -607,7 +653,7 @@ rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 		} else {
 			m3s_read_vector_from_sv(vec, x_or_vec);
 		}
-		m3s_space_rotate(space, angle, vec);
+		m3s_space_rotate(space, sin(angle * 2 * M_PI), cos(angle * 2 * M_PI), vec);
 		// return $self
 		XSRETURN(1);
 
@@ -657,12 +703,18 @@ project_vector(space, ...)
 		int i;
 		AV *vec_av;
 	ALIAS:
-		Math::3Space::project_point = 1
+		Math::3Space::project = 1
+		Math::3Space::unproject_vector = 2
+		Math::3Space::unproject = 3
 	PPCODE:
 		for (i= 1; i < items; i++) {
 			m3s_read_vector_from_sv(vec, ST(i));
-			if (ix) m3s_space_project_point(space, vec);
-			else    m3s_space_project_vector(space, vec);
+			switch (ix) {
+			case 0: m3s_space_project_vector(space, vec); break;
+			case 1: m3s_space_project_point(space, vec); break;
+			case 2: m3s_space_unproject_vector(space, vec); break;
+			default: m3s_space_unproject_point(space, vec);
+			}
 			if (SvTYPE(SvRV(ST(i))) == SVt_PVAV) {
 				vec_av= newAV();
 				av_extend(vec_av, 2);
@@ -686,15 +738,21 @@ project_vector_inplace(space, ...)
 		AV *vec_av;
 		SV **item, *x, *y, *z;
 	ALIAS:
-		Math::3Space::project_point_inplace = 1
+		Math::3Space::project_inplace = 1
+		Math::3Space::unproject_vector_inplace = 1
+		Math::3Space::unproject_inplace = 1
 	PPCODE:
 		for (i= 1; i < items; i++) {
 			if (!SvROK(ST(i)))
 				croak("Expected vector at $_[%d]", i-1);
 			else if (SvPOK(SvRV(ST(i)))) {
 				vecp= m3s_vector_get_array(ST(i));
-				if (ix) m3s_space_project_point(space, vecp);
-				else    m3s_space_project_vector(space, vecp);
+				switch (ix) {
+				case 0: m3s_space_project_vector(space, vecp); break;
+				case 1: m3s_space_project_point(space, vecp); break;
+				case 2: m3s_space_unproject_vector(space, vecp); break;
+				default: m3s_space_unproject_point(space, vecp);
+				}
 			}
 			else if (SvTYPE(SvRV(ST(i))) == SVt_PVAV) {
 				vec_av= (AV*) SvRV(ST(i));
@@ -713,8 +771,12 @@ project_vector_inplace(space, ...)
 				vec[1]= SvNV(y);
 				vec[2]= z? SvNV(z) : 0;
 				
-				if (ix) m3s_space_project_point(space, vec);
-				else    m3s_space_project_vector(space, vec);
+				switch (ix) {
+				case 0: m3s_space_project_vector(space, vec); break;
+				case 1: m3s_space_project_point(space, vec); break;
+				case 2: m3s_space_unproject_vector(space, vec); break;
+				default: m3s_space_unproject_point(space, vec);
+				}
 				
 				sv_setnv(x, vec[0]);
 				sv_setnv(y, vec[1]);
@@ -723,22 +785,6 @@ project_vector_inplace(space, ...)
 		}
 		// return $self
 		XSRETURN(1);
-
-SV*
-reparent(space, parent)
-	SV *space
-	SV *parent
-	INIT:
-		m3s_space_t *sp3= m3s_get_magic_space(space, OR_DIE), *psp3;
-	PPCODE:
-		m3s_space_recache_parent(space);
-		if (parent && SvOK(parent)) {
-			psp3= m3s_get_magic_space(parent, OR_DIE);
-			m3s_space_recache_parent(parent);
-			m3s_space_reparent(sp3, psp3);
-		} else {
-			m3s_space_reparent(sp3, NULL);
-		}
 
 #***********************************************************************************************
 # Vector object

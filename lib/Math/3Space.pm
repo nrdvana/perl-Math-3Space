@@ -59,7 +59,7 @@ systems.
 
 =cut
 
-package Math::3Space::Exports {
+{ package Math::3Space::Exports;
 	use Exporter::Extensible -exporter_setup => 1;
 	*vec3= *Math::3Space::Vector::vec3;
 	*space= *Math::3Space::space;
@@ -109,6 +109,11 @@ this process.  You can provide an array of 16 values (column major order) or an 
 Optional reference to parent coordinate space.  The origin and each of the axis vectors are
 described in terms of the parent coordiante space.  A parent of C<undef> means the space is
 described in terms of global absolute coordiantes.
+
+=head2 parent_count
+
+Number of parent coordinate spaces above this one, i.e. the "depth" of this node in the
+hierarchy.
 
 =head2 origin
 
