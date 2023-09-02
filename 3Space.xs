@@ -52,12 +52,15 @@ static inline void m3s_vector_cross(NV *dest, NV *vec1, NV *vec2) {
 
 // Vector dot Product, N = A dot B
 static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
-	NV mag1= vec1[0]*vec1[0] + vec1[1]*vec1[1] + vec1[2]*vec1[2];
-	NV mag2= vec2[0]*vec2[0] + vec2[1]*vec2[1] + vec2[2]*vec2[2];
-	NV prod= vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
-	if (mag1 == 0 || mag2 == 0)
+	NV mag, prod;
+	mag= (vec1[0]*vec1[0] + vec1[1]*vec1[1] + vec1[2]*vec1[2])
+	   * (vec2[0]*vec2[0] + vec2[1]*vec2[1] + vec2[2]*vec2[2]);
+	prod= vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
+	if (mag < NV_tolerance)
 		croak("Can't calculate dot product of vector with length == 0");
-	return prod / sqrt(mag1 * mag2);
+	else if (fabs(mag - 1) > NV_tolerance)
+		prod /= sqrt(mag);
+	return prod;
 }
 
 /* Check whether a space's axis vectors are unit length and orthagonal to
