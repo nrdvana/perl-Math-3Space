@@ -8,34 +8,34 @@ sub check_vec {
 }
 
 is( Math::3Space::space(), object {
-	call xv     => object { call sub { [shift->xyz] } => [ 1, 0, 0 ]; };
-	call yv     => object { call sub { [shift->xyz] } => [ 0, 1, 0 ]; };
-	call zv     => object { call sub { [shift->xyz] } => [ 0, 0, 1 ]; };
-	call origin => object { call sub { [shift->xyz] } => [ 0, 0, 0 ]; };
+	call xv     => check_vec(1, 0, 0);
+	call yv     => check_vec(0, 1, 0);
+	call zv     => check_vec(0, 0, 1);
+	call origin => check_vec(0, 0, 0);
 	call parent => undef;
 }, 'global ctor' );
 
 is( my $s1= space(), object {
-	call xv     => object { call sub { [shift->xyz] } => [ 1, 0, 0 ]; };
-	call yv     => object { call sub { [shift->xyz] } => [ 0, 1, 0 ]; };
-	call zv     => object { call sub { [shift->xyz] } => [ 0, 0, 1 ]; };
-	call origin => object { call sub { [shift->xyz] } => [ 0, 0, 0 ]; };
+	call xv     => check_vec(1, 0, 0);
+	call yv     => check_vec(0, 1, 0);
+	call zv     => check_vec(0, 0, 1);
+	call origin => check_vec(0, 0, 0);
 	call parent => undef;
 }, 'imported ctor' );
 
 is( $s1->space, object {
-	call xv     => object { call sub { [shift->xyz] } => [ 1, 0, 0 ]; };
-	call yv     => object { call sub { [shift->xyz] } => [ 0, 1, 0 ]; };
-	call zv     => object { call sub { [shift->xyz] } => [ 0, 0, 1 ]; };
-	call origin => object { call sub { [shift->xyz] } => [ 0, 0, 0 ]; };
+	call xv     => check_vec(1, 0, 0);
+	call yv     => check_vec(0, 1, 0);
+	call zv     => check_vec(0, 0, 1);
+	call origin => check_vec(0, 0, 0);
 	call parent => $s1;
 }, 'derived space' );
 
 my $s2= $s1->space->rotate(.5, [1,1,1]);
 is( $s2->clone, object {
-	call xv => check_vec($s2->xv->xyz);
-	call yv => check_vec($s2->yv->xyz);
-	call zv => check_vec($s2->zv->xyz);
+	call xv   => check_vec($s2->xv->xyz);
+	call yv   => check_vec($s2->yv->xyz);
+	call zv   => check_vec($s2->zv->xyz);
 	call parent => $s2->parent;
 	call parent_count => $s2->parent_count;
 }, 'clone' );
