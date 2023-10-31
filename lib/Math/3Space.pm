@@ -48,8 +48,7 @@ XSLoader::load('Math::3Space', $Math::3Space::VERSION);
   $combined->project_inplace($s1_pt);
   
   # Interoperate with OpenGL
-  @float16= $s1->get_4x4_projection;
-  @float16= $s1->get_4x4_unprojection;
+  @float16= $s1->get_gl_projection;
 
 =head1 DESCRIPTION
 
@@ -299,6 +298,15 @@ this space's own axes:
 =item rot_zv
 
 =back
+
+=head2 get_gl_projection
+
+  @float16= $space->get_gl_projection();
+  $space->get_gl_projection($buffer);
+
+Get an OpenGL-compatible 16-element array representing a 4x4 matrix that would perform the same
+projection as this space.  This can either be returned as 16 perl floats, or written into a
+packed buffer of 16 doubles.
 
 =cut
 

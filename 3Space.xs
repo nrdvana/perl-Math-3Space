@@ -411,23 +411,39 @@ static SV* m3s_wrap_space(m3s_space_t *space) {
 	return obj;
 }
 
-// Create a new Math::3Space::Vector object, which is a blessed scalar-ref containing
-// the aligned bytes of three NV (usually doubles)
 // This code assumes that 8-byte alignment is good enough even if the NV type is
 //  long double
-#define DOUBLE_ALIGNMENT_MASK 7
+#define NV_ALIGNMENT_MASK 7
+static void m3s_make_aligned_buffer(SV *buf, size_t size) {
+	char *p;
+	STRLEN len;
+
+	if (!SvPOK(buf))
+		sv_setpvs(buf, "");
+	p= SvPV(buf, len);
+	if (len < size) {
+		SvGROW(buf, size);
+		SvCUR_set(buf, size);
+		p= SvPVX(buf);
+	}
+	// ensure double alignment
+	if ((intptr_t)p & NV_ALIGNMENT_MASK) {
+		SvGROW(buf, size + NV_ALIGNMENT_MASK);
+		p= SvPVX(buf);
+		sv_chop(buf, p + NV_ALIGNMENT_MASK+1 - ((intptr_t)p & NV_ALIGNMENT_MASK));
+		SvCUR_set(buf, size);
+	}
+}
+
+// Create a new Math::3Space::Vector object, which is a blessed scalar-ref containing
+// the aligned bytes of three NV (usually doubles)
 static SV* m3s_wrap_vector(m3s_vector_p vec_array) {
 	SV *obj, *buf;
 	char *p;
 	buf= newSVpvn((char*) vec_array, sizeof(NV)*3);
-	p= SvPV_nolen(buf);
-	// ensure double alignment
-	if ((intptr_t)p & DOUBLE_ALIGNMENT_MASK) {
-		SvGROW(buf, sizeof(NV)*4);
-		p= SvPV_nolen(buf);
-		sv_chop(buf, p + sizeof(NV) - ((intptr_t)p & DOUBLE_ALIGNMENT_MASK));
-		SvCUR_set(buf, sizeof(NV)*3);
-		p= SvPV_nolen(buf);
+	if ((intptr_t)SvPVX(buf) & NV_ALIGNMENT_MASK) {
+		m3s_make_aligned_buffer(buf, sizeof(NV)*3);
+		memcpy(SvPVX(buf), vec_array, sizeof(NV)*3);
 	}
 	obj= newRV_noinc(buf);
 	sv_bless(obj, gv_stashpv("Math::3Space::Vector", GV_ADD));
@@ -441,7 +457,7 @@ static NV * m3s_vector_get_array(SV *vector) {
 	STRLEN len= 0;
 	if (sv_isobject(vector) && SvPOK(SvRV(vector)))
 		p= SvPV(SvRV(vector), len);
-	if (len != sizeof(NV)*3 || ((intptr_t)p & DOUBLE_ALIGNMENT_MASK) != 0)
+	if (len != sizeof(NV)*3 || ((intptr_t)p & NV_ALIGNMENT_MASK) != 0)
 		croak("Invalid or corrupt Math::3Space::Vector object");
 	return (NV*) p;
 }
@@ -879,6 +895,33 @@ project_vector_inplace(space, ...)
 		}
 		// return $self
 		XSRETURN(1);
+
+void
+get_gl_projection(space, buffer=NULL)
+	m3s_space_t *space
+	SV *buffer
+	INIT:
+		STRLEN len;
+		NV *src;
+		double *dst, *dst_lim;
+	PPCODE:
+		if (buffer) {
+			m3s_make_aligned_buffer(buffer, sizeof(double)*16);
+			dst= (double*) SvPVX(buffer);
+			src= space->mat;
+			dst[ 0] = src[ 0]; dst[ 1] = src[ 1]; dst[ 2] = src[ 2]; dst[ 3] = 0;
+			dst[ 4] = src[ 3]; dst[ 5] = src[ 4]; dst[ 6] = src[ 5]; dst[ 7] = 0;
+			dst[ 8] = src[ 6]; dst[ 9] = src[ 7]; dst[10] = src[ 8]; dst[11] = 0;
+			dst[12] = src[ 9]; dst[13] = src[10]; dst[14] = src[11]; dst[15] = 1;
+			XSRETURN(0);
+		} else {
+			EXTEND(SP, 16);
+			mPUSHn(SPACE_XV(space)[0]); mPUSHn(SPACE_XV(space)[1]); mPUSHn(SPACE_XV(space)[2]); mPUSHn(0);
+			mPUSHn(SPACE_YV(space)[0]); mPUSHn(SPACE_YV(space)[1]); mPUSHn(SPACE_YV(space)[2]); mPUSHn(0);
+			mPUSHn(SPACE_ZV(space)[0]); mPUSHn(SPACE_ZV(space)[1]); mPUSHn(SPACE_ZV(space)[2]); mPUSHn(0);
+			mPUSHn(SPACE_ORIGIN(space)[0]); mPUSHn(SPACE_ORIGIN(space)[1]); mPUSHn(SPACE_ORIGIN(space)[2]); mPUSHn(1);
+			XSRETURN(16);
+		}
 
 #**********************************************************************************************
 # Math::3Space::Vector
