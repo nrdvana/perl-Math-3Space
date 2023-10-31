@@ -452,6 +452,7 @@ static NV * m3s_vector_get_array(SV *vector) {
 static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 	SV **el;
 	AV *vec_av;
+	HV *attrs;
 	size_t i, n;
 	if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVAV) {
 		vec_av= (AV*) SvRV(in);
@@ -465,6 +466,11 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 				croak("Vector element %d is not a number", i);
 			vec[i]= SvNV(*el);
 		}
+	} else if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVHV) {
+		attrs= (HV*) SvRV(in);
+		vec[0]= ((el= hv_fetchs(attrs, "x", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
+		vec[1]= ((el= hv_fetchs(attrs, "y", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
+		vec[2]= ((el= hv_fetchs(attrs, "z", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
 	} else if (SvROK(in) && SvPOK(SvRV(in)) && SvCUR(SvRV(in)) == sizeof(NV)*3) {
 		memcpy(vec, SvPV_nolen(SvRV(in)), sizeof(NV)*3);
 	} else
@@ -874,9 +880,9 @@ project_vector_inplace(space, ...)
 		// return $self
 		XSRETURN(1);
 
-#***********************************************************************************************
-# Vector object
-#***********************************************************************************************
+#**********************************************************************************************
+# Math::3Space::Vector
+#**********************************************************************************************
 MODULE = Math::3Space              PACKAGE = Math::3Space::Vector
 
 m3s_vector_p
@@ -898,7 +904,35 @@ vec3(vec_or_x, y=NULL, z=NULL)
 	OUTPUT:
 		RETVAL
 
-
+m3s_vector_p
+new(pkg, ...)
+	SV *pkg
+	INIT:
+		m3s_vector_t vec= { 0, 0, 0 };
+		const char *key;
+		IV i, ofs;
+	CODE:
+		if (items == 2 && SvROK(ST(1))) {
+			m3s_read_vector_from_sv(vec, ST(1));
+		}
+		else if (items & 1) {
+			for (i= 1; i < items; i+= 2) {
+				key= SvOK(ST(i))? SvPV_nolen(ST(i)) : "";
+				if (strcmp(key, "x") == 0) ofs= 0;
+				else if (strcmp(key, "y") == 0) ofs= 1;
+				else if (strcmp(key, "z") == 0) ofs= 2;
+				else croak("Unknown attribute '%s'", key);
+				
+				if (!looks_like_number(ST(i+1)))
+					croak("Expected attribute '%s' value, but got '%s'", SvPV_nolen(ST(i)), SvPV_nolen(ST(i+1)));
+				vec[ofs]= SvNV(ST(i+1));
+			}
+		}
+		else
+			croak("Expected hashref, arrayref, or even-length list of attribute/value pairs");
+		RETVAL = vec;
+	OUTPUT:
+		RETVAL
 
 SV*
 x(vec, newval=NULL)

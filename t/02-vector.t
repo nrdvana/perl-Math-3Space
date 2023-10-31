@@ -36,4 +36,13 @@ is( vec3(1,1,0)->dot(-1,-1,0),         float(-1),        'dot opposite' );
 is( vec3(1,0,0)->cross([ 0,1,0 ]),        vec_check(0,0,1),  'X->cross(Y) = Z' );
 is( vec3(0,0,0)->cross([0,1,0], [0,0,1]), vec_check(1,0,0),  'Self= X cross Y' );
 
+sub M3V { 'Math::3Space::Vector' }
+is( M3V->new,                          vec_check(0,0,0), 'constructor defaults' );
+is( M3V->new(x => 1),                  vec_check(1,0,0), 'init x attr' );
+is( M3V->new(y => 1),                  vec_check(0,1,0), 'init y attr' );
+is( M3V->new(z => 1),                  vec_check(0,0,1), 'init z attr' );
+is( M3V->new({ x => 1 }),              vec_check(1,0,0), 'init x attr via hashref' );
+is( M3V->new({ y => 1 }),              vec_check(0,1,0), 'init y attr via hashref' );
+is( M3V->new({ z => 1 }),              vec_check(0,0,1), 'init z attr via hashref' );
+
 done_testing;

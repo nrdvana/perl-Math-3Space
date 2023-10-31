@@ -5,11 +5,6 @@ require Math::3Space;
 use Exporter 'import';
 our @EXPORT_OK= qw( vec3 );
 
-sub new {
-	my $class= shift;
-	bless vec3(@_? @_ : (0,0,0)), $class;
-}
-
 1;
 __END__
 
@@ -46,7 +41,9 @@ to pass vectors around without fully allocating Perl structures for them.
 =head2 new
 
   $vec= Math::3Space::Vector->new(); # 0,0,0
-  $vec= Math::3Space::Vector->new($x, $y, $z);
+  $vec= Math::3Space::Vector->new([ $x, $y, $z ]);
+  $vec= Math::3Space::Vector->new(x => $x, y => $y, z => $z);
+  $vec= Math::3Space::Vector->new({ x => $x, y => $y, z => $z });
 
 =head1 ATTRIBUTES
 
@@ -64,7 +61,7 @@ Read/write 'z' field.
 
 =head2 xyz
 
-Read/write list of (x,y,z).
+Read list of (x,y,z).
 
 =head2 magnitude
 
