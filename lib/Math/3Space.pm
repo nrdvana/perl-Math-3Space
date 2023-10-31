@@ -10,9 +10,6 @@ use Carp;
 require XSLoader;
 XSLoader::load('Math::3Space', $Math::3Space::VERSION);
 
-1;
-__END__
-
 =head1 SYNOPSIS
 
   use Math::3Space 'vec3', 'space';
