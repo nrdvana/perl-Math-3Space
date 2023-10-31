@@ -1,9 +1,13 @@
 package Math::3Space::Vector;
-# All methods handled by XS
-require Math::3Space;
+
+# VERSION
+# ABSTRACT: Object wrapping a buffer of three doubles
 
 use Exporter 'import';
 our @EXPORT_OK= qw( vec3 );
+
+# All methods handled by XS
+require Math::3Space;
 
 1;
 __END__

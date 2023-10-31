@@ -73,9 +73,9 @@ static int m3s_space_check_normal(m3s_space_t *sp) {
 	sp->is_normal= 0;
 	for (NV *vec= sp->mat+6, *pvec= sp->mat; vec > sp->mat; pvec= vec, vec -= 3) {
 		if (fabs(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2] - 1) > NV_tolerance)
-			return false;
+			return 0;
 		if ((vec[0]*pvec[0] + vec[1]*pvec[1] + vec[2]*pvec[2]) > NV_tolerance)
-			return false;
+			return 0;
 	}
 	return sp->is_normal= 1;
 }

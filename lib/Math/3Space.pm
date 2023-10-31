@@ -1,7 +1,7 @@
 package Math::3Space;
 
 # VERSION
-# ABSTRACT: 3D Coordinate Space math
+# ABSTRACT: 3D Coordinate math with an intuitive cross-space mapping API
 
 use strict;
 use warnings;
@@ -9,6 +9,9 @@ use Carp;
 
 require XSLoader;
 XSLoader::load('Math::3Space', $Math::3Space::VERSION);
+
+1;
+__END__
 
 =head1 SYNOPSIS
 
