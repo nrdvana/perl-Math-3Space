@@ -901,7 +901,7 @@ project_vector_inplace(space, ...)
 		XSRETURN(1);
 
 void
-get_gl_projection(space, buffer=NULL)
+get_gl_matrix(space, buffer=NULL)
 	m3s_space_t *space
 	SV *buffer
 	INIT:

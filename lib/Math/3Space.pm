@@ -13,47 +13,43 @@ XSLoader::load('Math::3Space', $Math::3Space::VERSION);
 =head1 SYNOPSIS
 
   use Math::3Space 'vec3', 'space';
-  my $s1= space();
-  my $s2= space($s1);
-  my $s3= $s2->space->rotate_z(.25)->translate(2,2);
   
-  # changes relative to parent space
-  $s1->reset; # to identity
-  $s1->translate(1,2,3);          # alias 'tr'
-  $s1->rotate($angle, $vector);   # alias 'rot'
-  $s1->rot_x($angle);             # rotate around parent X axis
-  $s1->orient($xv, $yv, $zv);
+  my $boat= space;
+  my $sailor= space($boat);
+  my $dock= space;
   
-  # changes relative to itself
-  $s1->scale($uniform_scale);
-  $s1->scale($xs, $ys, $zs);
-  $s1->set_scale(...);
-  $s1->travel($x,$y,$z);          # alias 'go'
-  $s1->rot_xv($angle);            # rotate around own X axis vector
+  # boat moves, carrying sailor with it
+  $boat->translate(0,0,1)->rotate(.001, [0,1,0]);
   
-  # Transform coordinates between spaces
-  $local_point= $s1->project($parent_point);
-  $parent_point= $s1->unproject($local_point);
-  $s1->project_inplace($point);
-  $local_vector= $s1->project_vector($parent_vector);
-  $parent_vector= $s1->unproject_vector($local_vector);
+  # sailor walks onto the dock
+  $sailor->translate(10,0,0);
+  $sailor->reparent($dock);
   
-  # Create a custom space that condenses multiple space transformations
-  $nested= space->space->space->space;
-  $combined= $nested->clone->reparent($s1);
-  # you can now directly project '$s1' points into '$combined'
-  # and it is the same as a chain of unprojecting from $s1,
-  # then projecting into each of the nested spaces
-  # but much faster.
-  $combined->project_inplace($s1_pt);
+  # The boat and dock are both floating
+  for ($dock, $boat) {
+    $_->translate(rand(.1), rand(.1), rand(.1))
+      ->rotate(rand(.001), [1,0,0])
+      ->rotate(rand(.001), [0,0,1]);
+  }
+  
+  # Sailor is holding a rope at 1,1,1 relative to themself.
+  # Where is the end of the rope in boat-space?
+  my $rope_end= vec3(1,1,1);
+  $sailor->unproject_inplace($rope_end);
+  $dock->unproject_inplace($rope_end);
+  $boat->project_inplace($rope_end);
+  
+  # Do the same thing in bulk with fewer calculations
+  my $sailor_to_boat= space($boat)->reparent($sailor);
+  @boat_points= $sailor_to_boat->project(@sailor_points);
   
   # Interoperate with OpenGL
-  @float16= $s1->get_gl_projection;
+  @float16= $boat->get_gl_matrix;
 
 =head1 DESCRIPTION
 
 This module implements the sort of 3D coordinate space math that would typically be done using
-4x4 matrices, but instead using a 3x4 matrix composed of axis vectors 'xv', 'yv', 'zv'
+a 4x4 matrix, but instead uses a 3x4 matrix composed of axis vectors 'xv', 'yv', 'zv'
 (i.e. vectors that point along the axes of the coordinate space) plus an origin point.
 This results in significantly fewer math operations needed to project points, and gives you a
 more useful mental model to work with, like being able to see which direction the coordinate
@@ -63,7 +59,7 @@ The coordinate spaces track their L</parent> coordinate space, so you can perfor
 projections from a space inside a space out to a different space inside a space inside a space
 without thinking about the details.
 
-The coordiante spaces can be exported as 4x4 matrices for use with OpenGL or other common 3D
+The coordinate spaces can be exported as 4x4 matrices for use with OpenGL or other common 3D
 systems.
 
 =cut
@@ -299,10 +295,10 @@ this space's own axes:
 
 =back
 
-=head2 get_gl_projection
+=head2 get_gl_matrix
 
-  @float16= $space->get_gl_projection();
-  $space->get_gl_projection($buffer);
+  @float16= $space->get_gl_matrix();
+  $space->get_gl_matrix($buffer);
 
 Get an OpenGL-compatible 16-element array representing a 4x4 matrix that would perform the same
 projection as this space.  This can either be returned as 16 perl floats, or written into a

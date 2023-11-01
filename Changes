@@ -1,3 +1,9 @@
+0.003 - 2023-11-01
+  - Fix compilation error for MSVC (hopefully)
+  - Fix unit test for perl with long-double
+  - Rename get_gl_projection to get_gl_matrix
+  - Improved documentation
+
 0.002 - 2023-10-31
   - Initial useful version
 
