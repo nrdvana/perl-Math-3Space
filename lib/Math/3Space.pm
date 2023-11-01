@@ -49,7 +49,7 @@ XSLoader::load('Math::3Space', $Math::3Space::VERSION);
 =head1 DESCRIPTION
 
 This module implements the sort of 3D coordinate space math that would typically be done using
-a 4x4 matrix, but instead uses a 3x4 matrix composed of axis vectors 'xv', 'yv', 'zv'
+a 4x4 matrix, but instead uses a 3x4 matrix composed of axis vectors C<xv>, C<yv>, C<zv>
 (i.e. vectors that point along the axes of the coordinate space) plus an origin point.
 This results in significantly fewer math operations needed to project points, and gives you a
 more useful mental model to work with, like being able to see which direction the coordinate
@@ -106,7 +106,7 @@ Initialize a space from raw attributes.
 
 Optional reference to parent coordinate space.  The origin and each of the axis vectors are
 described in terms of the parent coordinate space.  A parent of C<undef> means the space is
-described in terms of global absolute coordiantes.
+described in terms of global absolute coordinates.
 
 =head2 parent_count
 
@@ -145,7 +145,7 @@ Return a new space describing an identity, with the current object as its parent
 
 =head2 reparent
 
-Project this coordiante space into a different parent coordinate space.  After the projection,
+Project this coordinate space into a different parent coordinate space.  After the projection,
 this space still refers to the same absolute global coordinates as it did before, but it is
 described in terms of a different parent coordinate space.
 
@@ -220,7 +220,7 @@ eachother, like proper eigenvectors.  The algorithm is:
   # alias 'tr'
   $space->tr(...);
 
-Translate the origin of the coordiante space, in terms of parent coordinates.
+Translate the origin of the coordinate space, in terms of parent coordinates.
 
 =for Pod::Coverage tr
 
@@ -232,7 +232,7 @@ Translate the origin of the coordiante space, in terms of parent coordinates.
   # alias 'go'
   $space->go(...);
 
-Translate the origin of the coordiante space in terms of its own coordinates.
+Translate the origin of the coordinate space in terms of its own coordinates.
 e.g. if your L</zv> vector is being used as "forward", you can make an object travel
 forward with C<< $space->travel(0,0,1) >>.
 
@@ -272,7 +272,7 @@ This rotates the C<xv>, C<yv>, and C<zv> axes by an angle around some other vect
 is measured in revolutions rather than degrees or radians, so C<1> is a full rotation back to
 where you started, and .25 is a quarter rotation.  The vector is defined in terms of the parent
 coordinate space.  If you want to rotate around an arbitrary vector defined in *local*
-coordinates, just unproject it out to the parent coordiante space first.
+coordinates, just unproject it out to the parent coordinate space first.
 
 The following (more efficient) variants are available for rotating about the parent's axes or
 this space's own axes:

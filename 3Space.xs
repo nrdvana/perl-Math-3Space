@@ -136,7 +136,7 @@ static inline void m3s_space_unproject_vector(m3s_space_t *sp, NV *vec) {
 	vec[2]= x * mat[2] + y * mat[5] + z * mat[8];
 }
 
-/* Un-project a local point of this coordiante space out to the parent
+/* Un-project a local point of this coordinate space out to the parent
  * coordinate space.
  * Approx Cost: 15 load, 9 fmul, 9 fadd, 3 stor
  */
@@ -174,7 +174,7 @@ static void m3s_space_recache_n_parents(m3s_space_t *space) {
 }
 
 /* Given two spaces (with valid ->parent caches) project/unproject the space so that
- * it represents the same global coordiantes while now being described in terms of
+ * it represents the same global coordinates while now being described in terms of
  * a new parent coordinate space.  'parent' may be NULL, to move 'space' to become a
  * top-level space
  * MUST call m3s_space_recache_parent on each (non null) space before calling this method!
