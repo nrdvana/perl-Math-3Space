@@ -5,6 +5,10 @@
 
 #include <math.h>
 
+#if !defined(__cplusplus) && defined(_MSC_VER) && _MSC_VER < 1900
+#  define inline __inline
+#endif
+
 /**********************************************************************************************\
 * m3s API, defining all the math for this module.
 \**********************************************************************************************/
