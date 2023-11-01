@@ -31,7 +31,7 @@ struct m3s_space {
 };
 
 static const m3s_space_t m3s_identity= {
-	1,0,0, 0,1,0, 0,0,1, 0,0,0,
+	{ 1,0,0, 0,1,0, 0,0,1, 0,0,0 },
 	1,
 	NULL,
 	0,
@@ -227,12 +227,10 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
 	mag_sq= axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2];
 	if (mag_sq == 0)
 		croak("Can't rotate around vector with 0 magnitude");
-	else if (fabs(mag_sq - 1) > NV_tolerance) {
-		scale= 1/sqrt(mag_sq);
-		r.mat[6]= axis[0] * scale;
-		r.mat[7]= axis[1] * scale;
-		r.mat[8]= axis[2] * scale;
-	}
+	scale= (fabs(mag_sq - 1) > NV_tolerance)? 1/sqrt(mag_sq) : 1;
+	r.mat[6]= axis[0] * scale;
+	r.mat[7]= axis[1] * scale;
+	r.mat[8]= axis[2] * scale;
 	// set y vector to any vector not colinear with z vector
 	r.mat[3]= 1;
 	r.mat[4]= 0;
@@ -274,7 +272,6 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
  * Approx Cost, else:      87-99 fmul, 1-2 fdiv, 56-62 fadd, 1 fabs, 1-2 sqrt
  */
 static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, int axis_idx) {
-	NV *axis= space->mat + axis_idx*3;
 	m3s_vector_t vec1, vec2;
 
 	if (space->is_normal == -1)
@@ -318,8 +315,7 @@ static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos
 
 // destructor for m3s_space_t magic
 static int m3s_space_magic_free(pTHX_ SV* sv, MAGIC* mg) {
-	m3s_space_t *space;
-    if (mg->mg_ptr) {
+	if (mg->mg_ptr) {
 		Safefree(mg->mg_ptr);
 		mg->mg_ptr= NULL;
 	}
@@ -443,7 +439,6 @@ static void m3s_make_aligned_buffer(SV *buf, size_t size) {
 // the aligned bytes of three NV (usually doubles)
 static SV* m3s_wrap_vector(m3s_vector_p vec_array) {
 	SV *obj, *buf;
-	char *p;
 	buf= newSVpvn((char*) vec_array, sizeof(NV)*3);
 	if ((intptr_t)SvPVX(buf) & NV_ALIGNMENT_MASK) {
 		m3s_make_aligned_buffer(buf, sizeof(NV)*3);
@@ -483,7 +478,7 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 		for (i=0; i < n; i++) {
 			el= av_fetch(vec_av, i, 0);
 			if (!el || !*el || !looks_like_number(*el))
-				croak("Vector element %d is not a number", i);
+				croak("Vector element %d is not a number", (int)i);
 			vec[i]= SvNV(*el);
 		}
 	} else if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVHV) {
@@ -606,7 +601,7 @@ space(parent=NULL)
 	OUTPUT:
 		RETVAL
 
-SV*
+void
 xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 	m3s_space_t *space
 	SV *x_or_vec
@@ -618,7 +613,6 @@ xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 		Math::3Space::origin = 3
 	INIT:
 		NV *vec= space->mat + ix * 3;
-		AV *vec_av;
 	PPCODE:
 		if (x_or_vec) {
 			if (y) {
@@ -654,13 +648,12 @@ parent_count(space)
 	OUTPUT:
 		RETVAL
 
-SV*
+void
 reparent(space, parent)
 	SV *space
 	SV *parent
 	INIT:
 		m3s_space_t *sp3= m3s_get_magic_space(space, OR_DIE), *psp3, *cur;
-		SV **field;
 	PPCODE:
 		m3s_space_recache_parent(space);
 		if (SvOK(parent)) {
@@ -677,7 +670,7 @@ reparent(space, parent)
 		hv_store((HV*) SvRV(space), "parent", 6, newSVsv(parent), 0);
 		XSRETURN(1);
 
-SV*
+void
 translate(space, x_or_vec, y=NULL, z=NULL)
 	m3s_space_t *space
 	SV *x_or_vec
@@ -712,7 +705,7 @@ translate(space, x_or_vec, y=NULL, z=NULL)
 		}
 		XSRETURN(1);
 
-SV*
+void
 scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 	m3s_space_t *space
 	SV *xscale_or_vec
@@ -747,7 +740,7 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 		space->is_normal= -1;
 		XSRETURN(1);
 
-SV*
+void
 rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 	m3s_space_t *space
 	NV angle
@@ -771,7 +764,7 @@ rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 		// return $self
 		XSRETURN(1);
 
-SV*
+void
 rot_x(space, angle)
 	m3s_space_t *space
 	NV angle
@@ -782,7 +775,7 @@ rot_x(space, angle)
 		Math::3Space::rot_yv = 4
 		Math::3Space::rot_zv = 5
 	INIT:
-		NV *matp, *matp2, tmp1, tmp2;
+		NV *matp, tmp1, tmp2;
 		size_t ofs1, ofs2;
 		NV s= sin(angle * 2 * M_PI), c= cos(angle * 2 * M_PI);
 	PPCODE:
@@ -858,7 +851,7 @@ project_vector_inplace(space, ...)
 	PPCODE:
 		for (i= 1; i < items; i++) {
 			if (!SvROK(ST(i)))
-				croak("Expected vector at $_[%d]", i-1);
+				croak("Expected vector at $_[%d]", (int)(i-1));
 			else if (SvPOK(SvRV(ST(i)))) {
 				vecp= m3s_vector_get_array(ST(i));
 				switch (ix) {
@@ -905,9 +898,8 @@ get_gl_matrix(space, buffer=NULL)
 	m3s_space_t *space
 	SV *buffer
 	INIT:
-		STRLEN len;
 		NV *src;
-		double *dst, *dst_lim;
+		double *dst;
 	PPCODE:
 		if (buffer) {
 			m3s_make_aligned_buffer(buffer, sizeof(double)*16);
@@ -981,7 +973,7 @@ new(pkg, ...)
 	OUTPUT:
 		RETVAL
 
-SV*
+void
 x(vec, newval=NULL)
 	m3s_vector_p vec
 	SV *newval
@@ -1005,7 +997,7 @@ xyz(vec)
 		PUSHs(sv_2mortal(newSVnv(vec[1])));
 		PUSHs(sv_2mortal(newSVnv(vec[2])));
 
-SV*
+void
 magnitude(vec, scale=NULL)
 	m3s_vector_p vec
 	SV *scale
@@ -1026,7 +1018,7 @@ magnitude(vec, scale=NULL)
 		}
 		XSRETURN(1);
 
-SV*
+void
 set(vec1, vec2_or_x, y=NULL, z=NULL)
 	m3s_vector_p vec1
 	SV *vec2_or_x
@@ -1060,7 +1052,7 @@ set(vec1, vec2_or_x, y=NULL, z=NULL)
 		}
 		XSRETURN(1);
 
-SV*
+void
 scale(vec1, vec2_or_x, y=NULL, z=NULL)
 	m3s_vector_p vec1
 	SV *vec2_or_x
