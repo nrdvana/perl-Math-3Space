@@ -18,12 +18,12 @@ subtest get_gl_projection => sub {
 	my $s= space;
 	is( [ $s->get_gl_projection ], mat_check(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1), 'identity' );
 	$s->get_gl_projection(my $buf);
-	is( $buf, pack(F16 => (1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)), 'identity buffer' );
+	is( $buf, pack(d16 => (1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)), 'identity buffer' );
 
 	$s->translate([ 2,3,4 ]);
 	is( [ $s->get_gl_projection ], mat_check(1,0,0,0, 0,1,0,0, 0,0,1,0, 2,3,4,1), 'tr 2,3,4' );
 	$s->get_gl_projection($buf);
-	is( $buf, pack(F16 => (1,0,0,0, 0,1,0,0, 0,0,1,0, 2,3,4,1)), 'tr 2,3,4 buffer' );
+	is( $buf, pack(d16 => (1,0,0,0, 0,1,0,0, 0,0,1,0, 2,3,4,1)), 'tr 2,3,4 buffer' );
 
 	$s= space->rot_x(.25);
 	is( [ $s->get_gl_projection ], mat_check(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1), 'rot x .25' );
