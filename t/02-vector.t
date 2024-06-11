@@ -29,9 +29,13 @@ is( vec3(1,1,1)->scale(vec3(0,0,0)),   vec_check(0,0,0), 'scale(vec)' );
 is( vec3(5,0,0)->magnitude,            float(5),         'magnitude' );
 is( vec3(5,0,0)->magnitude(2),         vec_check(2,0,0), 'set magnitude' );
 
-is( vec3(1,0,0)->dot(0,1,0),           float(0),         'dot orthagonal' );
-is( vec3(1,1,1)->dot(1,1,1),           float(1),         'dot colinear' );
-is( vec3(1,1,0)->dot(-1,-1,0),         float(-1),        'dot opposite' );
+is( vec3(1,0,0)->dot(0,5,0),           float(0),         'dot orthagonal' );
+is( vec3(0,0,1)->dot(0,0,2),           float(2),         'dot colinear' );
+is( vec3(0,2,0)->dot(0,-2,0),          float(-4),        'dot opposite' );
+
+is( vec3(1,0,0)->cos(0,1,0),           float(0),         'cos orthagonal' );
+is( vec3(1,1,1)->cos(1,1,1),           float(1),         'cos colinear' );
+is( vec3(1,1,0)->cos(-1,-1,0),         float(-1),        'cos opposite' );
 
 is( vec3(1,0,0)->cross([ 0,1,0 ]),        vec_check(0,0,1),  'X->cross(Y) = Z' );
 is( vec3(0,0,0)->cross([0,1,0], [0,0,1]), vec_check(1,0,0),  'Self= X cross Y' );

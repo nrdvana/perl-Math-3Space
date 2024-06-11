@@ -115,6 +115,16 @@ Multiply each component of the vector by a scalar.
 
 Dot product with another vector.
 
+=head2 cos
+
+  $cos= $vector->cos($vector2);
+  $cos= $vector->cos($x,$y,$z);
+  $cos= $vector->cos([$x,$y,$z]);
+
+Return the vector-cosine to the other vector.  This is the same as the dot product divided by
+the magnitudes of the vectors, or identical to the dot product when the vectors are unit-length.
+This dies if either vector is zero length (or too close to zero for available floating precision).
+
 =head2 cross
 
   $c= $a->cross($b);

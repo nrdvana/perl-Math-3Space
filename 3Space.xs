@@ -56,12 +56,17 @@ static inline void m3s_vector_cross(NV *dest, NV *vec1, NV *vec2) {
 
 // Vector dot Product, N = A dot B
 static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
+	return vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
+}
+
+// Vector cosine.  Same as dotprod for unit vectors.
+static inline NV m3s_vector_cosine(NV *vec1, NV *vec2) {
 	NV mag, prod;
 	mag= (vec1[0]*vec1[0] + vec1[1]*vec1[1] + vec1[2]*vec1[2])
 	   * (vec2[0]*vec2[0] + vec2[1]*vec2[1] + vec2[2]*vec2[2]);
 	prod= vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
 	if (mag < NV_tolerance)
-		croak("Can't calculate dot product of vector with length == 0");
+		croak("Can't calculate vector cosine of vector with length < 1e-14");
 	else if (fabs(mag - 1) > NV_tolerance)
 		prod /= sqrt(mag);
 	return prod;
@@ -1092,6 +1097,26 @@ dot(vec1, vec2_or_x, y=NULL, z=NULL)
 			m3s_read_vector_from_sv(vec2, vec2_or_x);
 		}
 		RETVAL= m3s_vector_dotprod(vec1, vec2);
+	OUTPUT:
+		RETVAL
+
+NV
+cos(vec1, vec2_or_x, y=NULL, z=NULL)
+	m3s_vector_p vec1
+	SV *vec2_or_x
+	SV *y
+	SV *z
+	INIT:
+		NV vec2[3];
+	CODE:
+		if (y) {
+			vec2[0]= SvNV(vec2_or_x);
+			vec2[1]= SvNV(y);
+			vec2[2]= z? SvNV(z) : 0;
+		} else {
+			m3s_read_vector_from_sv(vec2, vec2_or_x);
+		}
+		RETVAL= m3s_vector_cosine(vec1, vec2);
 	OUTPUT:
 		RETVAL
 
