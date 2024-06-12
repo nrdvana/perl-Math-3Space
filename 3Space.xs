@@ -79,8 +79,9 @@ static inline NV m3s_vector_cosine(NV *vec1, NV *vec2) {
  * Approx Cost: 4-19 load, 3-18 mul, 4-17 add, 1-2 stor
  */
 static int m3s_space_check_normal(m3s_space_t *sp) {
+	NV *vec, *pvec;
 	sp->is_normal= 0;
-	for (NV *vec= sp->mat+6, *pvec= sp->mat; vec > sp->mat; pvec= vec, vec -= 3) {
+	for (vec= sp->mat+6, pvec= sp->mat; vec > sp->mat; pvec= vec, vec -= 3) {
 		if (fabs(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2] - 1) > NV_tolerance)
 			return 0;
 		if ((vec[0]*pvec[0] + vec[1]*pvec[1] + vec[2]*pvec[2]) > NV_tolerance)
