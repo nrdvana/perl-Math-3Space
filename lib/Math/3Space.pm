@@ -10,6 +10,11 @@ use Carp;
 require XSLoader;
 XSLoader::load('Math::3Space', $Math::3Space::VERSION);
 
+use overload '""' => sub {
+  my @vecs = map [$_[0]->$_->xyz], qw(xv yv zv origin);
+  "[\n" . join('', map " [@$_]\n", @vecs) . "]\n";
+};
+
 =head1 SYNOPSIS
 
   use Math::3Space 'vec3', 'space';
