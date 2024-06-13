@@ -51,6 +51,12 @@ subtest rotate => sub {
 		call yv => vec_check(-1,0,0);
 		call zv => vec_check(0,0,1);
 	}, 'rotate around parent Z axis' );
+	is( space->rot_x(.1)->rot_y(.4), object {
+		call is_normal => T;
+		call xv => vec_check(-0.80901699,0,-0.58778525);
+		call yv => vec_check(0.34549150,0.80901699,-0.47552825);
+		call zv => vec_check(0.47552825,-0.58778525,-0.65450849);
+	}, 'two non-right-angle rotations' );
 	
 	# Rotations of non-unit-length axis vectors:
 	# Ensure that magnitude is preserved and that they remain orthagonal.
