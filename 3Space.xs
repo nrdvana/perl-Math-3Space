@@ -628,7 +628,7 @@ xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 			} else {
 				m3s_read_vector_from_sv(vec, x_or_vec);
 			}
-			space->is_normal= -1;
+			if (ix < 3) space->is_normal= -1;
 			// leave $self on stack as return value
 		} else {
 			ST(0)= sv_2mortal(m3s_wrap_vector(vec));
