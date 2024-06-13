@@ -53,7 +53,7 @@ subtest rotate => sub {
 	}, 'rotate around parent Z axis' );
 	
 	# Rotations of non-unit-length axis vectors:
-	# Ensure that magnitude is preserved and that they remain orthagonal.
+	# Ensure that magnitude is preserved and that they remain orthogonal.
 	my $s1= space->scale(2,3,4)->rot_x(.1)->rot_y(.4)->rot_z(.8);
 	is( $s1, object {
 		call is_normal => F;
