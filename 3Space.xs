@@ -37,6 +37,15 @@ static const m3s_space_t m3s_identity= {
 	0,
 };
 
+#define M3S_VECLOAD(vec,x_or_vec,y,z,dflt) do { \
+  if (y) { \
+    vec[0]= SvNV(x_or_vec); \
+    vec[1]= SvNV(y); \
+    vec[2]= z? SvNV(z) : dflt; \
+  } else { \
+    m3s_read_vector_from_sv(vec, x_or_vec); \
+  } } while(0)
+
 typedef NV m3s_vector_t[3];
 typedef NV *m3s_vector_p;
 
@@ -62,9 +71,8 @@ static inline NV m3s_vector_dotprod(NV *vec1, NV *vec2) {
 // Vector cosine.  Same as dotprod for unit vectors.
 static inline NV m3s_vector_cosine(NV *vec1, NV *vec2) {
 	NV mag, prod;
-	mag= (vec1[0]*vec1[0] + vec1[1]*vec1[1] + vec1[2]*vec1[2])
-	   * (vec2[0]*vec2[0] + vec2[1]*vec2[1] + vec2[2]*vec2[2]);
-	prod= vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
+	mag= m3s_vector_dotprod(vec1,vec1) * m3s_vector_dotprod(vec2,vec2);
+	prod= m3s_vector_dotprod(vec1,vec2);
 	if (mag < NV_tolerance)
 		croak("Can't calculate vector cosine of vector with length < 1e-14");
 	else if (fabs(mag - 1) > NV_tolerance)
@@ -82,9 +90,9 @@ static int m3s_space_check_normal(m3s_space_t *sp) {
 	NV *vec, *pvec;
 	sp->is_normal= 0;
 	for (vec= sp->mat+6, pvec= sp->mat; vec > sp->mat; pvec= vec, vec -= 3) {
-		if (fabs(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2] - 1) > NV_tolerance)
+		if (fabs(m3s_vector_dotprod(vec,vec) - 1) > NV_tolerance)
 			return 0;
-		if ((vec[0]*pvec[0] + vec[1]*pvec[1] + vec[2]*pvec[2]) > NV_tolerance)
+		if (m3s_vector_dotprod(vec,pvec) > NV_tolerance)
 			return 0;
 	}
 	return sp->is_normal= 1;
@@ -230,7 +238,7 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
 	m3s_space_t r;
 
 	// Construct temporary coordinate space where 'zv' is 'axis'
-	mag_sq= axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2];
+	mag_sq= m3s_vector_dotprod(axis,axis);
 	if (mag_sq == 0)
 		croak("Can't rotate around vector with 0 magnitude");
 	scale= (fabs(mag_sq - 1) > NV_tolerance)? 1/sqrt(mag_sq) : 1;
@@ -243,13 +251,13 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
 	r.mat[5]= 0;
 	// x = normalize( y cross z )
 	m3s_vector_cross(r.mat, r.mat+3, r.mat+6);
-	mag_sq= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
+	mag_sq= m3s_vector_dotprod(r.mat,r.mat);
 	if (mag_sq < NV_tolerance) {
 		// try again with a different vector
 		r.mat[3]= 0;
 		r.mat[4]= 1;
 		m3s_vector_cross(r.mat, r.mat+3, r.mat+6);
-		mag_sq= r.mat[0]*r.mat[0] + r.mat[1]*r.mat[1] + r.mat[2]*r.mat[2];
+		mag_sq= m3s_vector_dotprod(r.mat,r.mat);
 		if (mag_sq == 0)
 			croak("BUG: failed to find perpendicular vector");
 	}
@@ -621,13 +629,7 @@ xv(space, x_or_vec=NULL, y=NULL, z=NULL)
 		NV *vec= space->mat + ix * 3;
 	PPCODE:
 		if (x_or_vec) {
-			if (y) {
-				vec[0]= SvNV(x_or_vec);
-				vec[1]= SvNV(y);
-				vec[2]= z? SvNV(z) : 0;
-			} else {
-				m3s_read_vector_from_sv(vec, x_or_vec);
-			}
+			M3S_VECLOAD(vec,x_or_vec,y,z,0);
 			if (ix < 3) space->is_normal= -1;
 			// leave $self on stack as return value
 		} else {
@@ -659,7 +661,7 @@ reparent(space, parent)
 	SV *space
 	SV *parent
 	INIT:
-		m3s_space_t *sp3= m3s_get_magic_space(space, OR_DIE), *psp3, *cur;
+		m3s_space_t *sp3= m3s_get_magic_space(space, OR_DIE), *psp3=NULL, *cur;
 	PPCODE:
 		m3s_space_recache_parent(space);
 		if (SvOK(parent)) {
@@ -669,10 +671,8 @@ reparent(space, parent)
 			for (cur= psp3; cur; cur= cur->parent)
 				if (cur == sp3)
 					croak("Attempt to create a cycle: new 'parent' is a child of this space");
-			m3s_space_reparent(sp3, psp3);
-		} else {
-			m3s_space_reparent(sp3, NULL);
 		}
+		m3s_space_reparent(sp3, psp3);
 		hv_store((HV*) SvRV(space), "parent", 6, newSVsv(parent), 0);
 		XSRETURN(1);
 
@@ -689,13 +689,7 @@ translate(space, x_or_vec, y=NULL, z=NULL)
 	INIT:
 		NV vec[3], *matp;
 	PPCODE:
-		if (y) {
-			vec[0]= SvNV(x_or_vec);
-			vec[1]= SvNV(y);
-			vec[2]= z? SvNV(z) : 0;
-		} else {
-			m3s_read_vector_from_sv(vec, x_or_vec);
-		}
+		M3S_VECLOAD(vec,x_or_vec,y,z,0);
 		if (ix) {
 			matp= space->mat;
 			matp[9] += vec[0] * matp[0] + vec[1] * matp[3] + vec[2] * matp[6];
@@ -733,7 +727,7 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 		for (i= 0; i < 3; i++) {
 			s= vec[i];
 			if (ix == 1) {
-				m= sqrt(matp[0]*matp[0] + matp[1]*matp[1] + matp[2]*matp[2]);
+				m= sqrt(m3s_vector_dotprod(matp,matp));
 				if (m > 0)
 					s /= m;
 				else
@@ -938,13 +932,7 @@ vec3(vec_or_x, y=NULL, z=NULL)
 	INIT:
 		m3s_vector_t vec;
 	CODE:
-		if (y) {
-			vec[0]= SvNV(vec_or_x);
-			vec[1]= SvNV(y);
-			vec[2]= z? SvNV(z) : 0;
-		} else {
-			m3s_read_vector_from_sv(vec, vec_or_x);
-		}
+		M3S_VECLOAD(vec,vec_or_x,y,z,0);
 		RETVAL = vec;
 	OUTPUT:
 		RETVAL
@@ -1008,7 +996,7 @@ magnitude(vec, scale=NULL)
 	m3s_vector_p vec
 	SV *scale
 	INIT:
-		NV s, m= sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
+		NV s, m= sqrt(m3s_vector_dotprod(vec,vec));
 	PPCODE:
 		if (scale) {
 			if (m > 0) {
@@ -1036,13 +1024,7 @@ set(vec1, vec2_or_x, y=NULL, z=NULL)
 	INIT:
 		NV vec2[3];
 	PPCODE:
-		if (y || looks_like_number(vec2_or_x)) {
-			vec2[0]= SvNV(vec2_or_x);
-			vec2[1]= y? SvNV(y) : 0;
-			vec2[2]= z? SvNV(z) : 0;
-		} else {
-			m3s_read_vector_from_sv(vec2, vec2_or_x);
-		}
+		M3S_VECLOAD(vec2,vec2_or_x,y,z,0);
 		if (ix == 0) {
 			vec1[0]= vec2[0];
 			vec1[1]= vec2[1];
@@ -1067,7 +1049,7 @@ scale(vec1, vec2_or_x, y=NULL, z=NULL)
 	INIT:
 		NV vec2[3];
 	PPCODE:
-		// single value should be treated as ($x,$x,$x) inatead of ($x,0,0)
+		// single value should be treated as ($x,$x,$x) instead of ($x,0,0)
 		if (looks_like_number(vec2_or_x)) {
 			vec2[0]= SvNV(vec2_or_x);
 			vec2[1]= y? SvNV(y) : vec2[0];
@@ -1090,13 +1072,7 @@ dot(vec1, vec2_or_x, y=NULL, z=NULL)
 	INIT:
 		NV vec2[3];
 	CODE:
-		if (y) {
-			vec2[0]= SvNV(vec2_or_x);
-			vec2[1]= SvNV(y);
-			vec2[2]= z? SvNV(z) : 0;
-		} else {
-			m3s_read_vector_from_sv(vec2, vec2_or_x);
-		}
+		M3S_VECLOAD(vec2,vec2_or_x,y,z,0);
 		RETVAL= m3s_vector_dotprod(vec1, vec2);
 	OUTPUT:
 		RETVAL
@@ -1110,13 +1086,7 @@ cos(vec1, vec2_or_x, y=NULL, z=NULL)
 	INIT:
 		NV vec2[3];
 	CODE:
-		if (y) {
-			vec2[0]= SvNV(vec2_or_x);
-			vec2[1]= SvNV(y);
-			vec2[2]= z? SvNV(z) : 0;
-		} else {
-			m3s_read_vector_from_sv(vec2, vec2_or_x);
-		}
+		M3S_VECLOAD(vec2,vec2_or_x,y,z,0);
 		RETVAL= m3s_vector_cosine(vec1, vec2);
 	OUTPUT:
 		RETVAL
