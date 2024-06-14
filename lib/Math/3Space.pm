@@ -131,7 +131,7 @@ The C<< [x,y,z] >> vector of the Z axis (often named "K" in math text)
 
 =head2 is_normal
 
-Returns true if all axis vectors are unit-length and orthagonal to eachother.
+Returns true if all axis vectors are unit-length and orthogonal to each other.
 
 =head1 METHODS
 
@@ -205,8 +205,8 @@ Variants:
 
 =head2 normalize
 
-Ensure that the C<xv>, C<yv>, and C<zv> axis vectors are unit length and orthagonal to
-eachother, like proper eigenvectors.  The algorithm is:
+Ensure that the C<xv>, C<yv>, and C<zv> axis vectors are unit length and orthogonal to
+each other, like proper eigenvectors.  The algorithm is:
 
   * make zv a unit vector
   * xv = yv cross zv, and make it a unit vector

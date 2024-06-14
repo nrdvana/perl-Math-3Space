@@ -72,7 +72,7 @@ static inline NV m3s_vector_cosine(NV *vec1, NV *vec2) {
 	return prod;
 }
 
-/* Check whether a space's axis vectors are unit length and orthagonal to
+/* Check whether a space's axis vectors are unit length and orthogonal to
  * eachother, and update the 'is_normal' flag on the space.
  * Having this flag = 1 can optimize relative rotations later.
  * The flag gets set to -1 any time an operation may have broken normality.
@@ -272,7 +272,7 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
 
 /* Rotate the space around one of its own axes.  axis_idx: 0 (xv), 1 (yv) or 2 (zv)
  * Angle is supplied as direct sine / cosine values.
- * If the space is_normal (unit-length vectors orthagonal to eachother) this uses a very
+ * If the space is_normal (unit-length vectors orthogonal to eachother) this uses a very
  * efficient optimization.  Else it falls back to the full m3s_space_rotate function.
  * Approx Cost, if normal: 18 fmul, 12 fadd
  * Approx Cost, else:      87-99 fmul, 1-2 fdiv, 56-62 fadd, 1 fabs, 1-2 sqrt
@@ -285,7 +285,7 @@ static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos
 	if (!space->is_normal) {
 		m3s_space_rotate(space, angle_sin, angle_cos, space->mat + axis_idx*3);
 	} else {
-		// Axes are all unit vectors, orthagonal to eachother, and can skip setting up a
+		// Axes are all unit vectors, orthogonal to eachother, and can skip setting up a
 		// custom rotation matrix.  Just define the vectors inside the space post-rotation,
 		// then project them out of the space.
 		if (axis_idx == 0) { // around XV, Y -> Z
