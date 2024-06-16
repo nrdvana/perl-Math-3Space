@@ -213,17 +213,16 @@ static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
 	}
 	// At this point, 'dest' is either a root 3Space, or common_parent is its parent.
 	// If the common parent is the original from_space, then we're done.
-	if (parent != common_parent) {
-		// Calculate what from_space would be at this parent depth.
-		if (!(parent != NULL)) croak("assertion failed: parent != NULL");
-		memcpy(&sp_tmp, parent, sizeof(sp_tmp));
-		while (sp_tmp.parent != common_parent)
-			m3s_space_unproject_space(sp_tmp.parent, &sp_tmp);
-		// sp_tmp is now equivalent to projecting through the chain from common_parent to parent
-		m3s_space_project_space(&sp_tmp, space);
-		space->parent= parent;
-		space->n_parents= parent->n_parents + 1;
-	}
+	if (parent == common_parent) return;
+	// Calculate what from_space would be at this parent depth.
+	if (!(parent != NULL)) croak("assertion failed: parent != NULL");
+	memcpy(&sp_tmp, parent, sizeof(sp_tmp));
+	while (sp_tmp.parent != common_parent)
+		m3s_space_unproject_space(sp_tmp.parent, &sp_tmp);
+	// sp_tmp is now equivalent to projecting through the chain from common_parent to parent
+	m3s_space_project_space(&sp_tmp, space);
+	space->parent= parent;
+	space->n_parents= parent->n_parents + 1;
 	// Note that any space which has 'space' as a parent will now have an invalid n_parents
 	// cache, which is why those caches need rebuilt before calling this function.
 }
