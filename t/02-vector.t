@@ -9,6 +9,8 @@ sub vec_check {
 	return object { call sub { [shift->xyz] }, [ float($x), float($y), float($z) ]; }
 }
 
+is vec3(1,2,3), '[1 2 3]', 'stringify';
+
 is( vec3(1,2,3),                       vec_check(1,2,3), 'basic ctor' );
 is( vec3(vec3(4,3,2)),                 vec_check(4,3,2), 'clone ctor' );
 

@@ -9,6 +9,8 @@ our @EXPORT_OK= qw( vec3 );
 # All methods handled by XS
 require Math::3Space;
 
+use overload '""' => sub { "[@{[$_[0]->xyz]}]" };
+
 1;
 __END__
 
