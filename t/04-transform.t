@@ -124,4 +124,18 @@ subtest rotate => sub {
 	}, 'rotate around (1,1,1)' );
 };
 
+subtest rotate_subspace => sub {
+  my $sp1= space->rot_z(.125);
+  my $sp2= $sp1->space->rot_z(.125);
+  my $sp3= $sp2->space->rot_z(.125);
+  my $sp4= $sp3->space->rot_z(.125);
+  is( $sp4, object {
+    call is_normal => T;
+    call origin => vec_check(0,0,0);
+    call xv => vec_check(0.70710678,0.70710678,0);
+    call yv => vec_check(-0.70710678,0.70710678,0);
+    call zv => vec_check(0,0,1);
+  }, 'rotate 4 times, each subspaced' );
+};
+
 done_testing;
