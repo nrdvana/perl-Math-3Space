@@ -198,28 +198,31 @@ static void m3s_space_reparent(m3s_space_t *space, m3s_space_t *parent) {
 	// Short circuit for nothing to do
 	if (space->parent == parent)
 		return;
-	// Walk back the stack of "from" until it has fewer parents than dest.
-	// This way dest->parent has a chance to be "from".
+	// Walk back the stack of parents until it has fewer parents than 'space'.
+	// This way space->parent has a chance to be 'common_parent'.
 	common_parent= parent;
 	while (common_parent && common_parent->n_parents >= space->n_parents)
 		common_parent= common_parent->parent;
-	// Now unproject 'space' from each of its parents until its parent is "common_parent".
+	// Now unproject 'space' from each of its parents until its parent is 'common_parent'.
 	while (space->n_parents && space->parent != common_parent) {
-		// Map dest out to be a sibling of its parent
+		// Map 'space' out to be a sibling of its parent
 		m3s_space_unproject_space(space->parent, space);
-		// back up common_parent one more time, if dest reached it
+		// if 'space' reached the depth of common_parent+1 and the loop didn't stop,
+		// then it wasn't actually the parent they have in common, yet.
 		if (common_parent && common_parent->n_parents + 1 == space->n_parents)
 			common_parent= common_parent->parent;
 	}
-	// At this point, 'dest' is either a root 3Space, or common_parent is its parent.
-	// If the common parent is the original from_space, then we're done.
-	if (parent == common_parent) return;
-	// Calculate what from_space would be at this parent depth.
+	// At this point, 'space' is either a root 3Space, or 'common_parent' is its parent.
+	// If the common parent is the original 'parent', then we're done.
+	if (parent == common_parent)
+		return;
+	// Calculate an equivalent space to 'parent' at this parent depth.
 	if (!(parent != NULL)) croak("assertion failed: parent != NULL");
 	memcpy(&sp_tmp, parent, sizeof(sp_tmp));
 	while (sp_tmp.parent != common_parent)
 		m3s_space_unproject_space(sp_tmp.parent, &sp_tmp);
-	// sp_tmp is now equivalent to projecting through the chain from common_parent to parent
+	// 'sp_tmp' is now equivalent to projecting through the chain from common_parent to parent,
+	// so just project 'space' into this temporary and we're done.
 	m3s_space_project_space(&sp_tmp, space);
 	space->parent= parent;
 	space->n_parents= parent->n_parents + 1;
