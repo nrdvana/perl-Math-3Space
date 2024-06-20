@@ -436,7 +436,7 @@ static void m3s_make_aligned_buffer(SV *buf, size_t size) {
 
 	if (!SvPOK(buf))
 		sv_setpvs(buf, "");
-	p= SvPV(buf, len);
+	p= SvPV_force(buf, len);
 	if (len < size) {
 		SvGROW(buf, size);
 		SvCUR_set(buf, size);
@@ -481,12 +481,15 @@ static NV * m3s_vector_get_array(SV *vector) {
 // This should be extended to handle any sensible format a user might supply vectors.
 // It currently supports arrayref-of-SvNV and vector objects.
 static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
-	SV **el;
+	SV **el, *rv= SvROK(in)? SvRV(in) : NULL;
 	AV *vec_av;
 	HV *attrs;
 	size_t i, n;
-	if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVAV) {
-		vec_av= (AV*) SvRV(in);
+	if (!rv || !SvOK(rv))
+		croak("Can't read vector from %s", sv_reftype(in, 1));
+
+	if (SvTYPE(rv) == SVt_PVAV) {
+		vec_av= (AV*) rv;
 		n= av_len(vec_av)+1;
 		if (n != 3 && n != 2)
 			croak("Vector arrayref must have 2 or 3 elements");
@@ -497,13 +500,13 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 				croak("Vector element %d is not a number", (int)i);
 			vec[i]= SvNV(*el);
 		}
-	} else if (SvROK(in) && SvTYPE(SvRV(in)) == SVt_PVHV) {
-		attrs= (HV*) SvRV(in);
+	} else if (SvTYPE(rv) == SVt_PVHV) {
+		attrs= (HV*) rv;
 		vec[0]= ((el= hv_fetchs(attrs, "x", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
 		vec[1]= ((el= hv_fetchs(attrs, "y", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
 		vec[2]= ((el= hv_fetchs(attrs, "z", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
-	} else if (SvROK(in) && SvPOK(SvRV(in)) && SvCUR(SvRV(in)) == sizeof(NV)*3) {
-		memcpy(vec, SvPV_nolen(SvRV(in)), sizeof(NV)*3);
+	} else if (SvPOK(rv) && SvCUR(rv) == sizeof(NV)*3) {
+		memcpy(vec, SvPV_force_nolen(rv), sizeof(NV)*3);
 	} else
 		croak("Can't read vector from %s", sv_reftype(in, 1));
 }
