@@ -485,8 +485,8 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 	AV *vec_av;
 	HV *attrs;
 	size_t i, n;
-	if (!rv || !SvOK(rv))
-		croak("Can't read vector from %s", sv_reftype(in, 1));
+	if (!rv)
+		croak("Vector must be a reference type");
 
 	if (SvTYPE(rv) == SVt_PVAV) {
 		vec_av= (AV*) rv;
@@ -507,6 +507,48 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 		vec[2]= ((el= hv_fetchs(attrs, "z", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
 	} else if (SvPOK(rv) && SvCUR(rv) == sizeof(NV)*3) {
 		memcpy(vec, SvPV_force_nolen(rv), sizeof(NV)*3);
+	} else if (sv_isa(in, "PDL")) {
+		// Check dimensions of ndarray.  If it is nothing but a very simple 3 NVs, copy it out to 'vec'.
+		// If it is a higher dimension, return that and let caller decide what to do.
+		dSP;
+		int count, dim= 0;
+		SV *ret;
+
+		ENTER;
+		SAVETMPS;
+		PUSHMARK(SP);
+		EXTEND(SP,1);
+		PUSHs(in);
+		PUTBACK;
+		count= call_method("dims", G_LIST);
+		SPAGAIN;
+		if (count == 1) {
+			dim= POPi;
+		} else {
+			SP -= count;
+		}
+		PUTBACK;
+		FREETMPS;
+		LEAVE;
+
+		if (dim < 1 || dim > 3)
+			croak("Expected PDL dimensions of 2x1 or 3x1");
+
+		ENTER;
+		SAVETMPS;
+		PUSHMARK(SP);
+		EXTEND(SP,1);
+		PUSHs(in);
+		PUTBACK;
+		count= call_method("list", G_LIST);
+		SPAGAIN;
+		if (count > 3) SP -= (count-3); // should never happen
+		vec[2]= (count > 2)? POPn : 0;
+		vec[1]= (count > 1)? POPn : 0;
+		vec[0]= (count > 0)? POPn : 0;
+		PUTBACK;
+		FREETMPS;
+		LEAVE;
 	} else
 		croak("Can't read vector from %s", sv_reftype(in, 1));
 }
