@@ -37,13 +37,19 @@ static const m3s_space_t m3s_identity= {
 	0,
 };
 
+#define M3S_VECTYPE_VECOBJ   1
+#define M3S_VECTYPE_ARRAY    2
+#define M3S_VECTYPE_HASH     3
+#define M3S_VECTYPE_PDL      4
+#define M3S_VECTYPE_PDLMULTI 5
+
 #define M3S_VECLOAD(vec,x_or_vec,y,z,dflt) do { \
   if (y) { \
     vec[0]= SvNV(x_or_vec); \
     vec[1]= SvNV(y); \
     vec[2]= z? SvNV(z) : dflt; \
   } else { \
-    m3s_read_vector_from_sv(vec, x_or_vec); \
+    m3s_read_vector_from_sv(vec, x_or_vec, NULL); \
   } } while(0)
 
 typedef NV m3s_vector_t[3];
@@ -480,7 +486,7 @@ static NV * m3s_vector_get_array(SV *vector) {
 // Read the values of a vector out of perl data 'in' and store them in 'vec'
 // This should be extended to handle any sensible format a user might supply vectors.
 // It currently supports arrayref-of-SvNV and vector objects.
-static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
+static int m3s_read_vector_from_sv(m3s_vector_p vec, SV *in, size_t pdl_dims[3]) {
 	SV **el, *rv= SvROK(in)? SvRV(in) : NULL;
 	AV *vec_av;
 	HV *attrs;
@@ -500,18 +506,21 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 				croak("Vector element %d is not a number", (int)i);
 			vec[i]= SvNV(*el);
 		}
+		return M3S_VECTYPE_ARRAY;
 	} else if (SvTYPE(rv) == SVt_PVHV) {
 		attrs= (HV*) rv;
 		vec[0]= ((el= hv_fetchs(attrs, "x", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
 		vec[1]= ((el= hv_fetchs(attrs, "y", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
 		vec[2]= ((el= hv_fetchs(attrs, "z", 0)) && *el && SvOK(*el))? SvNV(*el) : 0;
+		return M3S_VECTYPE_HASH;
 	} else if (SvPOK(rv) && SvCUR(rv) == sizeof(NV)*3) {
 		memcpy(vec, SvPV_force_nolen(rv), sizeof(NV)*3);
+		return M3S_VECTYPE_VECOBJ;
 	} else if (sv_isa(in, "PDL")) {
 		// Check dimensions of ndarray.  If it is nothing but a very simple 3 NVs, copy it out to 'vec'.
 		// If it is a higher dimension, return that and let caller decide what to do.
 		dSP;
-		int count, dim= 0;
+		int count, single_dim= 0;
 		SV *ret;
 
 		ENTER;
@@ -522,8 +531,18 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 		PUTBACK;
 		count= call_method("dims", G_LIST);
 		SPAGAIN;
-		if (count == 1) {
-			dim= POPi;
+		if (pdl_dims) {
+			// return up to 3 dims; more than that doesn't change our behavior.
+			if (count > 3) SP -= (count-3);
+			pdl_dims[2]= (count > 2)? POPi : 0;
+			pdl_dims[1]= (count > 1)? POPi : 0;
+			pdl_dims[0]= (count > 0)? POPi : 0;
+			if (pdl_dims[1] == 0)
+				single_dim= pdl_dims[0];
+		}
+		// if caller doesn't pass pdl_dims, they expect a simple 1x3 vector.
+		else if (count == 1) {
+			single_dim= POPi;
 		} else {
 			SP -= count;
 		}
@@ -531,24 +550,28 @@ static void m3s_read_vector_from_sv(m3s_vector_p vec, SV *in) {
 		FREETMPS;
 		LEAVE;
 
-		if (dim < 1 || dim > 3)
+		if (single_dim == 2 || single_dim == 3) {
+			ENTER;
+			SAVETMPS;
+			PUSHMARK(SP);
+			EXTEND(SP,1);
+			PUSHs(in);
+			PUTBACK;
+			count= call_method("list", G_LIST);
+			SPAGAIN;
+			if (count > 3) SP -= (count-3); // should never happen
+			vec[2]= (count > 2)? POPn : 0;
+			vec[1]= (count > 1)? POPn : 0;
+			vec[0]= (count > 0)? POPn : 0;
+			PUTBACK;
+			FREETMPS;
+			LEAVE;
+			return M3S_VECTYPE_PDL;
+		}
+		else if (!pdl_dims)
 			croak("Expected PDL dimensions of 2x1 or 3x1");
-
-		ENTER;
-		SAVETMPS;
-		PUSHMARK(SP);
-		EXTEND(SP,1);
-		PUSHs(in);
-		PUTBACK;
-		count= call_method("list", G_LIST);
-		SPAGAIN;
-		if (count > 3) SP -= (count-3); // should never happen
-		vec[2]= (count > 2)? POPn : 0;
-		vec[1]= (count > 1)? POPn : 0;
-		vec[0]= (count > 0)? POPn : 0;
-		PUTBACK;
-		FREETMPS;
-		LEAVE;
+		else
+			return M3S_VECTYPE_PDLMULTI;
 	} else
 		croak("Can't read vector from %s", sv_reftype(in, 1));
 }
@@ -589,6 +612,57 @@ static void m3s_space_recache_parent(SV *space_sv) {
 		space->n_parents= depth--;
 }
 
+// TODO: find a way to tap into PDL without compile-time dependency...
+static SV* m3s_pdl_vector(m3s_vector_p vec, int dim) {
+	SV *ret;
+	int count;
+	dSP;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	EXTEND(SP, 3);
+	PUSHs(sv_2mortal(newSVnv(vec[0])));
+	PUSHs(sv_2mortal(newSVnv(vec[1])));
+	if (dim == 3) PUSHs(sv_2mortal(newSVnv(vec[2])));
+	PUTBACK;
+	count= call_pv("PDL::Core::pdl", G_SCALAR);
+	if (count != 1) croak("call to PDL::Core::pdl did not return an ndarray");
+	SPAGAIN;
+	ret= POPs;
+	SvREFCNT_inc(ret); // protect from FREETMPS
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	return ret;
+}
+static SV* m3s_pdl_matrix(NV *mat, bool transpose) {
+	AV *av;
+	SV *ret;
+	int i, count;
+	dSP;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	EXTEND(SP, 3);
+	for (i= 0; i < 3; i++) {
+		av= newAV_alloc_x(3);
+		av_push(av, newSVnv(mat[transpose? i+0 : (i*3)+0]));
+		av_push(av, newSVnv(mat[transpose? i+3 : (i*3)+1]));
+		av_push(av, newSVnv(mat[transpose? i+6 : (i*3)+2]));
+		PUSHs(sv_2mortal((SV*)newRV_noinc((SV*)av)));
+	}
+	PUTBACK;
+	count= call_pv("PDL::Core::pdl", G_SCALAR);
+	if (count != 1) croak("call to PDL::Core::pdl did not return an ndarray");
+	SPAGAIN;
+	ret= POPs;
+	SvREFCNT_inc(ret); // protect from FREETMPS
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	return ret;
+}
+
 /**********************************************************************************************\
 * Math::3Space Public API
 \**********************************************************************************************/
@@ -611,19 +685,19 @@ _init(obj, source=NULL)
 			} else if (SvROK(source) && SvTYPE(source) == SVt_PVHV) {
 				attrs= (HV*) SvRV(source);
 				if ((field= hv_fetch(attrs, "xv", 2, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(SPACE_XV(space), *field);
+					m3s_read_vector_from_sv(SPACE_XV(space), *field, NULL);
 				else
 					SPACE_XV(space)[0]= 1;
 				if ((field= hv_fetch(attrs, "yv", 2, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(SPACE_YV(space), *field);
+					m3s_read_vector_from_sv(SPACE_YV(space), *field, NULL);
 				else
 					SPACE_YV(space)[1]= 1;
 				if ((field= hv_fetch(attrs, "zv", 2, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(SPACE_ZV(space), *field);
+					m3s_read_vector_from_sv(SPACE_ZV(space), *field, NULL);
 				else
 					SPACE_ZV(space)[2]= 1;
 				if ((field= hv_fetch(attrs, "origin", 6, 0)) && *field && SvOK(*field))
-					m3s_read_vector_from_sv(SPACE_ORIGIN(space), *field);
+					m3s_read_vector_from_sv(SPACE_ORIGIN(space), *field, NULL);
 				space->is_normal= -1;
 			} else
 				croak("Invalid source for _init");
@@ -765,7 +839,7 @@ scale(space, xscale_or_vec, yscale=NULL, zscale=NULL)
 		size_t i;
 	PPCODE:
 		if (SvROK(xscale_or_vec) && yscale == NULL) {
-			m3s_read_vector_from_sv(vec, xscale_or_vec);
+			m3s_read_vector_from_sv(vec, xscale_or_vec, NULL);
 		} else {
 			vec[0]= SvNV(xscale_or_vec);
 			vec[1]= yscale? SvNV(yscale) : vec[0];
@@ -805,7 +879,7 @@ rotate(space, angle, x_or_vec, y=NULL, z=NULL)
 			vec[1]= SvNV(y);
 			vec[2]= SvNV(z);
 		} else {
-			m3s_read_vector_from_sv(vec, x_or_vec);
+			m3s_read_vector_from_sv(vec, x_or_vec, NULL);
 		}
 		m3s_space_rotate(space, sin(angle * 2 * M_PI), cos(angle * 2 * M_PI), vec);
 		// return $self
@@ -854,30 +928,67 @@ project_vector(space, ...)
 	m3s_space_t *space
 	INIT:
 		m3s_vector_t vec;
-		int i;
+		int i, vectype, count;
 		AV *vec_av;
+		SV *pdl_origin= NULL, *pdl_matrix= NULL;
+		size_t pdl_dims[3];
 	ALIAS:
 		Math::3Space::project = 1
 		Math::3Space::unproject_vector = 2
 		Math::3Space::unproject = 3
 	PPCODE:
 		for (i= 1; i < items; i++) {
-			m3s_read_vector_from_sv(vec, ST(i));
-			switch (ix) {
-			case 0: m3s_space_project_vector(space, vec); break;
-			case 1: m3s_space_project_point(space, vec); break;
-			case 2: m3s_space_unproject_vector(space, vec); break;
-			default: m3s_space_unproject_point(space, vec);
+			vectype= m3s_read_vector_from_sv(vec, ST(i), pdl_dims);
+			if (vectype == M3S_VECTYPE_PDLMULTI) {
+				dSP;
+				if (!pdl_origin) {
+					pdl_origin= sv_2mortal(m3s_pdl_vector(SPACE_ORIGIN(space), 3));
+					pdl_matrix= sv_2mortal(m3s_pdl_matrix(SPACE_XV(space), !(ix&2) /*transpose bool*/));
+				}
+				ENTER;
+				SAVETMPS;
+				PUSHMARK(SP);
+				// first, clone the input.  Then modify it in place.
+				EXTEND(SP, 4);
+				PUSHs(ST(i));
+				PUTBACK;
+				count= call_method("copy", G_SCALAR);
+				SPAGAIN;
+				if (count != 1) croak("PDL->copy failed?");
+				// project point subtracts origin
+				PUSHs(ix == 3? pdl_origin : &PL_sv_undef);
+				PUSHs(pdl_matrix);
+				// unproject point adds origin
+				PUSHs(ix == 1? pdl_origin : &PL_sv_undef);
+				PUTBACK;
+				count= call_pv("Math::3Space::_pdl_project_inplace", G_DISCARD);
+				
+				FREETMPS;
+				LEAVE;
+				ST(i-1)= ST(i);
 			}
-			if (SvTYPE(SvRV(ST(i))) == SVt_PVAV) {
-				vec_av= newAV();
-				av_extend(vec_av, 2);
-				av_push(vec_av, newSVnv(vec[0]));
-				av_push(vec_av, newSVnv(vec[1]));
-				av_push(vec_av, newSVnv(vec[2]));
-				ST(i-1)= sv_2mortal(newRV_noinc((SV*)vec_av));
-			} else {
-				ST(i-1)= sv_2mortal(m3s_wrap_vector(vec));
+			else {
+				switch (ix) {
+				case 0: m3s_space_project_vector(space, vec); break;
+				case 1: m3s_space_project_point(space, vec); break;
+				case 2: m3s_space_unproject_vector(space, vec); break;
+				default: m3s_space_unproject_point(space, vec);
+				}
+				switch (vectype) {
+				case M3S_VECTYPE_ARRAY:
+					vec_av= newAV();
+					av_extend(vec_av, 2);
+					av_push(vec_av, newSVnv(vec[0]));
+					av_push(vec_av, newSVnv(vec[1]));
+					av_push(vec_av, newSVnv(vec[2]));
+					ST(i-1)= sv_2mortal(newRV_noinc((SV*)vec_av));
+					break;
+				case M3S_VECTYPE_PDL:
+					ST(i-1)= sv_2mortal(m3s_pdl_vector(vec, pdl_dims[0]));
+					break;
+				default:
+					ST(i-1)= sv_2mortal(m3s_wrap_vector(vec));
+				}
 			}
 		}
 		XSRETURN(items-1);
@@ -889,8 +1000,10 @@ project_vector_inplace(space, ...)
 		m3s_vector_t vec;
 		m3s_vector_p vecp;
 		size_t i, n;
+		int vectype;
 		AV *vec_av;
-		SV **item, *x, *y, *z;
+		SV **item, *x, *y, *z, *pdl_origin= NULL, *pdl_matrix= NULL;
+		size_t pdl_dims[3];
 	ALIAS:
 		Math::3Space::project_inplace = 1
 		Math::3Space::unproject_vector_inplace = 2
@@ -899,7 +1012,9 @@ project_vector_inplace(space, ...)
 		for (i= 1; i < items; i++) {
 			if (!SvROK(ST(i)))
 				croak("Expected vector at $_[%d]", (int)(i-1));
-			else if (SvPOK(SvRV(ST(i)))) {
+			vectype= m3s_read_vector_from_sv(vec, ST(i), pdl_dims);
+			switch (vectype) {
+			case M3S_VECTYPE_VECOBJ:
 				vecp= m3s_vector_get_array(ST(i));
 				switch (ix) {
 				case 0: m3s_space_project_vector(space, vecp); break;
@@ -907,8 +1022,8 @@ project_vector_inplace(space, ...)
 				case 2: m3s_space_unproject_vector(space, vecp); break;
 				default: m3s_space_unproject_point(space, vecp);
 				}
-			}
-			else if (SvTYPE(SvRV(ST(i))) == SVt_PVAV) {
+				break;
+			case M3S_VECTYPE_ARRAY:
 				vec_av= (AV*) SvRV(ST(i));
 				n= av_len(vec_av)+1;
 				if (n != 3 && n != 2) croak("Expected 2 or 3 elements in vector");
@@ -921,9 +1036,6 @@ project_vector_inplace(space, ...)
 				item= n == 3? av_fetch(vec_av, 2, 0) : NULL;
 				if (item && !(*item && SvOK(*item))) croak("Invalid z value at $vec->[2]");
 				z= item? *item : NULL;
-				vec[0]= SvNV(x);
-				vec[1]= SvNV(y);
-				vec[2]= z? SvNV(z) : 0;
 				
 				switch (ix) {
 				case 0: m3s_space_project_vector(space, vec); break;
@@ -935,6 +1047,36 @@ project_vector_inplace(space, ...)
 				sv_setnv(x, vec[0]);
 				sv_setnv(y, vec[1]);
 				if (z) sv_setnv(z, vec[2]);
+				break;
+			case M3S_VECTYPE_PDL:
+			case M3S_VECTYPE_PDLMULTI:
+				{
+					int count;
+					dSP;
+					if (!pdl_origin) {
+						pdl_origin= sv_2mortal(m3s_pdl_vector(SPACE_ORIGIN(space), 3));
+						pdl_matrix= sv_2mortal(m3s_pdl_matrix(SPACE_XV(space), !(ix&2) /*transpose bool*/));
+					}
+					ENTER;
+					SAVETMPS;
+					PUSHMARK(SP);
+					EXTEND(SP, 4);
+					PUSHs(ST(i));
+					// project point subtracts origin
+					PUSHs(ix == 3? pdl_origin : &PL_sv_undef);
+					PUSHs(pdl_matrix);
+					// unproject point adds origin
+					PUSHs(ix == 1? pdl_origin : &PL_sv_undef);
+					PUTBACK;
+					count= call_pv("Math::3Space::_pdl_project_inplace", G_DISCARD);
+					
+					FREETMPS;
+					LEAVE;
+					ST(i-1)= ST(i);
+				}
+				break;
+			default:
+				croak("bug: unhandled vec type");
 			}
 		}
 		// return $self
@@ -993,7 +1135,7 @@ new(pkg, ...)
 		IV i, ofs;
 	CODE:
 		if (items == 2 && SvROK(ST(1))) {
-			m3s_read_vector_from_sv(vec, ST(1));
+			m3s_read_vector_from_sv(vec, ST(1), NULL);
 		}
 		else if (items & 1) {
 			for (i= 1; i < items; i+= 2) {
@@ -1103,7 +1245,7 @@ scale(vec1, vec2_or_x, y=NULL, z=NULL)
 			vec2[2]= z? SvNV(z) : y? 1 : vec2[0];
 		}
 		else {
-			m3s_read_vector_from_sv(vec2, vec2_or_x);
+			m3s_read_vector_from_sv(vec2, vec2_or_x, NULL);
 		}
 		vec1[0]*= vec2[0];
 		vec1[1]*= vec2[1];
@@ -1148,7 +1290,7 @@ cross(vec1, vec2_or_x, vec3_or_y=NULL, z=NULL)
 		m3s_vector_t vec2, vec3;
 	PPCODE:
 		if (!vec3_or_y) { // RET = vec1->cross(vec2)
-			m3s_read_vector_from_sv(vec2, vec2_or_x);
+			m3s_read_vector_from_sv(vec2, vec2_or_x, NULL);
 			m3s_vector_cross(vec3, vec1, vec2);
 			ST(0)= sv_2mortal(m3s_wrap_vector(vec3));
 		} else if (z || !SvROK(vec2_or_x) || looks_like_number(vec2_or_x)) { // RET = vec1->cross(x,y,z)
@@ -1158,8 +1300,8 @@ cross(vec1, vec2_or_x, vec3_or_y=NULL, z=NULL)
 			m3s_vector_cross(vec3, vec1, vec2);
 			ST(0)= sv_2mortal(m3s_wrap_vector(vec3));
 		} else {
-			m3s_read_vector_from_sv(vec2, vec2_or_x);
-			m3s_read_vector_from_sv(vec3, vec3_or_y);
+			m3s_read_vector_from_sv(vec2, vec2_or_x, NULL);
+			m3s_read_vector_from_sv(vec3, vec3_or_y, NULL);
 			m3s_vector_cross(vec1, vec2, vec3);
 			// leave $self on stack
 		}

@@ -79,6 +79,13 @@ sub import { shift; Math::3Space::Exports->import_into(scalar(caller), @_) }
 
 sub parent { $_[0]{parent} }
 
+# used by XS to avoid linking directly to PDL
+sub _pdl_project_inplace {
+	$_[0] -= $_[1] if defined $_[1];
+	$_[0] .= $_[0] x $_[2];
+	$_[0] += $_[3] if defined $_[3];
+}
+
 require Math::3Space::Vector;
 1;
 
