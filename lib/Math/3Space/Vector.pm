@@ -42,6 +42,8 @@ to pass vectors around without fully allocating Perl structures for them.
 
   $vec= vec3($x, $y, $z);
   $vec= vec3([ $x, $y, $z ]);
+  $vec= vec3({ x => $x, y => $y, z => $z });
+  $vec= pdl([ $x, $y, $z ]);
   $vec2= vec3($vec);
 
 =head2 new
@@ -50,6 +52,7 @@ to pass vectors around without fully allocating Perl structures for them.
   $vec= Math::3Space::Vector->new([ $x, $y, $z ]);
   $vec= Math::3Space::Vector->new(x => $x, y => $y, z => $z);
   $vec= Math::3Space::Vector->new({ x => $x, y => $y, z => $z });
+  $vec= Math::3Space::Vector->new(pdl([ $x, $y, $z ]));
 
 =head1 ATTRIBUTES
 
@@ -136,6 +139,16 @@ This dies if either vector is zero length (or too close to zero for available fl
 
 Return a new vector which is the cross product C<< A x B >>, or if called with 2 parameters
 assign the cross product to the object itself.
+
+=head1 SEE ALSO
+
+=over
+
+=item L<PDL>
+
+Perl Data Language ndarray are a good alternative, allowing for operations on many vectors in parallel.
+
+=back
 
 =cut
 

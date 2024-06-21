@@ -112,6 +112,32 @@ Construct a space (optionally within C<$parent>) initialized to an identity:
 
 Initialize a space from raw attributes.
 
+=head1 VECTOR FORMATS
+
+This module currently allows vectors to be specified as:
+
+=over
+
+=item L<Math::3Space::Vector>
+
+This is a blessed scalar-ref of packed perl-floats (usually double, but perl can be compiled for long double)
+
+=item Array-ref
+
+C<< [X,Y,Z] >> or C<< [X,Y] >>
+
+=item Hash-ref
+
+C<< { x => $x, y => $y, z => $z } >>
+
+=item PDL ndarray
+
+To assign vectors, you need a 2-element or 3-element array slice:  C<< pdl($x,$y) >>
+or C<< pdl($x,$y,$z) >>.  For the projection methods, you can specify higher dimensions as long
+as the lowest dimension is 3.
+
+=back
+
 =head1 ATTRIBUTES
 
 =head2 parent
@@ -315,6 +341,22 @@ this space's own axes:
 Get an OpenGL-compatible 16-element array representing a 4x4 matrix that would perform the same
 projection as this space.  This can either be returned as 16 perl floats, or written into a
 packed buffer of 16 doubles.
+
+=head1 SEE ALSO
+
+=over
+
+=item L<PDL>, L<PDL::Graphics::TriD>
+
+PDL has many tools for working with vectors and crunching numbers in parallel.
+The TriD library defines a number of objects for grouping polygon meshes and ways to
+visualize them.
+
+=item L<OpenGL::Sandbox>
+
+OpenGL::Sandbox provides handy wrappers around OpenGL textures, shaders, fonts, etc.
+
+=back
 
 =cut
 
