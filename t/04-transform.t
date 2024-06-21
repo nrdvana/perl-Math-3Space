@@ -138,4 +138,28 @@ subtest rotate_subspace => sub {
   }, 'rotate 4 times, each subspaced' );
 };
 
+subtest project => sub {
+	my $sp= space->rot_z(.25);
+	is( $sp->project(vec3(1,1,1)), vec_check(1,-1,1), 'vec3' );
+	is( $sp->project([1,1,1]), [1,-1,1], 'array' );
+	is( $sp->project({ x => 1, y => 1, z => 1 }), { x => 1, y => -1, z => 1 }, 'hash' );
+	is( $sp->project([1,1]), [1,-1,0], 'array[2]' );
+	is( $sp->project({ x => 1, y => 1 }), { x => 1, y => -1, z => 0 }, 'hash x,y' );
+};
+
+subtest project_inplace => sub {
+	my $sp= space->rot_z(.25);
+	my $x;
+	$sp->project_inplace($x= vec3(1,1,1));
+	is( $x, vec_check(1,-1,1), 'vec3' );
+	$sp->project_inplace($x= [1,1,1]);
+	is( $x, [1,-1,1], 'array' );
+	$sp->project_inplace($x= { x => 1, y => 1, z => 1 });
+	is( $x, { x => 1, y => -1, z => 1 }, 'hash' );
+	$sp->project_inplace($x= [1,1]);
+	is( $x, [1,-1], 'array[2]' );
+	$sp->project_inplace($x= { x => 1, y => 1 });
+	is( $x, { x => 1, y => -1 }, 'hash x,y' );
+};
+
 done_testing;

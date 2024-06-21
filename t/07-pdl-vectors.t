@@ -31,21 +31,20 @@ subtest project_pdl_vec => sub {
 	is( $s->unproject_vector(pdl(0,-1,0)), pdl_check(1,0,0),  'unproject_vector' );
 
 	my $pdl= pdl(1,0,0);
-	my $ret= $s->project_inplace($pdl);
-	ok( refaddr($pdl) == refaddr($ret) );
+	$s->project_inplace($pdl);
 	is( $pdl, pdl_check(0,-1,.5), 'project_inplace' );
-	$ret= $s->unproject_inplace($pdl);
+	$s->unproject_inplace($pdl);
 	is( $pdl, pdl_check(1,0,0), 'unproject_inplace' );
-	$ret= $s->project_vector_inplace($pdl);
+	$s->project_vector_inplace($pdl);
 	is( $pdl, pdl_check(0,-1,0), 'project_vector_inplace' );
-	$ret= $s->unproject_vector_inplace($pdl);
+	$s->unproject_vector_inplace($pdl);
 	is( $pdl, pdl_check(1,0,0), 'unproject_vector_inplace' );
 
 	$pdl= pdl([1,0,0], [0,1,0], [0,0,1]);
-	$ret= $s->project_inplace($pdl);
-	is( $ret->slice(',0'), pdl_check(0,-1,0.5), 'project_inplace multi ,0' );
-	is( $ret->slice(',1'), pdl_check(1,0,0.5),  'project_inplace multi ,1' );
-	is( $ret->slice(',2'), pdl_check(0,0,1.5),  'project_inplace multi ,2' );
+	$s->project_inplace($pdl);
+	is( $pdl->slice(',0'), pdl_check(0,-1,0.5), 'project_inplace multi ,0' );
+	is( $pdl->slice(',1'), pdl_check(1,0,0.5),  'project_inplace multi ,1' );
+	is( $pdl->slice(',2'), pdl_check(0,0,1.5),  'project_inplace multi ,2' );
 };
 
 done_testing;

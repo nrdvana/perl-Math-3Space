@@ -12,6 +12,8 @@ sub vec_check {
 is vec3(1,2,3), '[1 2 3]', 'stringify';
 
 is( vec3(1,2,3),                       vec_check(1,2,3), 'basic ctor' );
+is( vec3([1,2,3]),                     vec_check(1,2,3), 'ctor from arrayref' );
+is( vec3({x => 1, y => 2, z => 3}),    vec_check(1,2,3), 'ctor from hashref' );
 is( vec3(vec3(4,3,2)),                 vec_check(4,3,2), 'clone ctor' );
 
 is( vec3(5,5,5)->x(1)->y(4),           vec_check(1,4,5), 'x y z accessors' );
