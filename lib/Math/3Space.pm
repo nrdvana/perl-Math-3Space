@@ -73,7 +73,9 @@ systems.
 	use Exporter::Extensible -exporter_setup => 1;
 	*vec3= *Math::3Space::Vector::vec3;
 	*space= *Math::3Space::space;
-	export 'vec3', 'space';
+	*frustum_projection= *Math::3Space::Projection::new_frustum;
+	*perspective_projection= *Math::3Space::Projection::new_perspective;
+	export qw( vec3 space frustum_projection perspective_projection );
 }
 sub import { shift; Math::3Space::Exports->import_into(scalar(caller), @_) }
 
