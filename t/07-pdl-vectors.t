@@ -21,6 +21,10 @@ subtest assign_from_pdl_vec => sub {
 	my $s= space;
 	$s->xv(pdl([1,0,1]));
 	is( $s->xv, vec_check(1,0,1), 'assign xv from pdl' );
+
+	# Check again using different storage than NV
+	$s->yv(PDL::Core::float([0,.5,1]));
+	is( $s->yv, vec_check(0,.5,1), 'assign yv from pdl floats' );
 };
 
 subtest project_pdl_vec => sub {
@@ -45,6 +49,13 @@ subtest project_pdl_vec => sub {
 	is( $pdl->slice(',0'), pdl_check(0,-1,0.5), 'project_inplace multi ,0' );
 	is( $pdl->slice(',1'), pdl_check(1,0,0.5),  'project_inplace multi ,1' );
 	is( $pdl->slice(',2'), pdl_check(0,0,1.5),  'project_inplace multi ,2' );
+
+	# Check again using different storage than NV
+	$pdl= PDL::Core::float([1,0,0], [0,1,0], [0,0,1]);
+	$s->project_inplace($pdl);
+	is( $pdl->slice(',0'), pdl_check(0,-1,0.5), 'project_inplace float multi ,0' );
+	is( $pdl->slice(',1'), pdl_check(1,0,0.5),  'project_inplace float multi ,1' );
+	is( $pdl->slice(',2'), pdl_check(0,0,1.5),  'project_inplace float multi ,2' );
 };
 
 done_testing;
