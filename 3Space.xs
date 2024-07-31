@@ -300,6 +300,34 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
 	}
 }
 
+/* Rotate the space around an axis of its parent.  axis_idx: 0 (xv), 1 (yv) or 2 (zv)
+ * Angle is supplied as direct sine / cosine values.
+ * Approx Cost: 12 fmul, 6 fadd
+ */
+static void m2s_space_parent_axis_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, int axis_idx) {
+	int ofs1, ofs2;
+	NV tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, *matp;
+	switch (axis_idx) {
+	case 0: ofs1= 1, ofs2= 2; break;
+	case 1: ofs1= 2, ofs2= 0; break;
+	case 2: ofs1= 0, ofs2= 1; break;
+	default: croak("BUG: axis_idx > 2");
+	}
+	matp= SPACE_XV(space);
+	tmp1= angle_cos * matp[ofs1  ] - angle_sin * matp[ofs2  ];
+	tmp2= angle_sin * matp[ofs1  ] + angle_cos * matp[ofs2  ];
+	tmp3= angle_cos * matp[ofs1+3] - angle_sin * matp[ofs2+3];
+	tmp4= angle_sin * matp[ofs1+3] + angle_cos * matp[ofs2+3];
+	tmp5= angle_cos * matp[ofs1+6] - angle_sin * matp[ofs2+6];
+	tmp6= angle_sin * matp[ofs1+6] + angle_cos * matp[ofs2+6];
+	matp[ofs1]= tmp1;
+	matp[ofs2]= tmp2;
+	matp[ofs1+3]= tmp3;
+	matp[ofs2+3]= tmp4;
+	matp[ofs1+6]= tmp5;
+	matp[ofs2+6]= tmp6;
+}
+
 /* Rotate the space around one of its own axes.  axis_idx: 0 (xv), 1 (yv) or 2 (zv)
  * Angle is supplied as direct sine / cosine values.
  * If the space is_normal (unit-length vectors orthogonal to eachother) this uses a very
@@ -307,7 +335,7 @@ static void m3s_space_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, m3s
  * Approx Cost, if normal: 18 fmul, 12 fadd
  * Approx Cost, else:      87-99 fmul, 1-2 fdiv, 56-62 fadd, 1 fabs, 1-2 sqrt
  */
-static void m3s_space_self_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, int axis_idx) {
+static void m3s_space_self_axis_rotate(m3s_space_t *space, NV angle_sin, NV angle_cos, int axis_idx) {
 	m3s_vector_t vec1, vec2;
 
 	if (space->is_normal == -1)
@@ -969,27 +997,10 @@ rot_x(space, angle)
 		size_t ofs1, ofs2;
 		NV s= sin(angle * 2 * M_PI), c= cos(angle * 2 * M_PI);
 	PPCODE:
-		if (ix < 3) { // Rotate around axis of parent
-			matp= SPACE_XV(space);
-			ofs1= (ix+1) % 3;
-			ofs2= (ix+2) % 3;
-			tmp1= c * matp[ofs1] - s * matp[ofs2];
-			tmp2= s * matp[ofs1] + c * matp[ofs2];
-			matp[ofs1]= tmp1;
-			matp[ofs2]= tmp2;
-			matp += 3;
-			tmp1= c * matp[ofs1] - s * matp[ofs2];
-			tmp2= s * matp[ofs1] + c * matp[ofs2];
-			matp[ofs1]= tmp1;
-			matp[ofs2]= tmp2;
-			matp += 3;
-			tmp1= c * matp[ofs1] - s * matp[ofs2];
-			tmp2= s * matp[ofs1] + c * matp[ofs2];
-			matp[ofs1]= tmp1;
-			matp[ofs2]= tmp2;
-		} else {
-			m3s_space_self_rotate(space, s, c, ix - 3);
-		}
+		if (ix < 3) // Rotate around axis of parent
+			m2s_space_parent_axis_rotate(space, s, c, ix);
+		else
+			m3s_space_self_axis_rotate(space, s, c, ix - 3);
 		XSRETURN(1);
 
 void
