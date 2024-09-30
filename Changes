@@ -1,4 +1,4 @@
-0.004 -
+0.004 - 2024-09-30
   - BREAKNG CHANGE: Function previously named Vector::dot was actually cosine,
     and is now renamed to Vector::cos.  New Vector::dot is a pure dot product
     with no normalization.
@@ -6,7 +6,8 @@
     for any parameter that wants a vector.  You may additionally pass higher
     dimension ndarrays to the project and project_inplace functions to get
     parallel processing.
-  - Fixed bug where passing a hashref to project gave back a vector object.
+  - Fixed bug where passing a hashref to project() gave back a vector object.
+  - New Math::3Space::Projection objects for converting to 4x4 OpenGL matrix
 
 0.003 - 2023-11-01
   - Fix compilation error for MSVC (hopefully)

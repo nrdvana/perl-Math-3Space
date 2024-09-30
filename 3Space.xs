@@ -9,6 +9,15 @@
 #  define inline __inline
 #endif
 
+#ifndef newAV_alloc_x
+static AV *shim_newAV_alloc_x(int n) {
+	AV *ret= newAV();
+	av_extend(ret, n-1);
+	return ret;
+}
+#define newAV_alloc_x shim_newAV_alloc_x
+#endif
+
 /**********************************************************************************************\
 * m3s API, defining all the math for this module.
 \**********************************************************************************************/
@@ -589,7 +598,7 @@ static int m3s_read_vector_from_sv(m3s_vector_p vec, SV *in, size_t pdl_dims[3],
 	// array, then copy those values into 'vec'.  If the ndarray has higher dimensions, let the
 	// caller know about them in the 'pdl_dims' array, and don't touch 'vec'.  The caller can
 	// then decide how to handle those higher dimensions, or throw an error etc.
-	else if (sv_derived_from_pvn(in, "PDL", 3, 0)) {
+	else if (sv_derived_from(in, "PDL")) {
 		dSP;
 		int count, single_dim= 0;
 		SV *ret;
