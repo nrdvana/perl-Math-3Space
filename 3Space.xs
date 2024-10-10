@@ -1198,32 +1198,32 @@ get_gl_matrix(space, buffer=NULL)
 MODULE = Math::3Space              PACKAGE = Math::3Space::Projection
 
 SV *
-new_frustum(left, right, bottom, top, near, far)
+new_frustum(left, right, bottom, top, near_z, far_z)
 	double left
 	double right
 	double bottom
 	double top
-	double near
-	double far
+	double near_z
+	double far_z
 	INIT:
 		m3s_4space_projection_t proj;
 		double w, h, d, w_1, h_1, d_1;
 	CODE:
 		w= right - left;
 		h= top - bottom;
-		d= far - near;
+		d= far_z - near_z;
 		if (fabs(w) < double_tolerance || fabs(h) < double_tolerance || fabs(d) < double_tolerance)
 			croak("Described frustum has a zero-sized dimension");
 
 		w_1= 1/w;
 		h_1= 1/h;
 		d_1= 1/d;
-		proj.frustum.m00= near * 2 * w_1;
-		proj.frustum.m11= near * 2 * h_1;
+		proj.frustum.m00= near_z * 2 * w_1;
+		proj.frustum.m11= near_z * 2 * h_1;
 		proj.frustum.m20= (right+left) * w_1;
 		proj.frustum.m21= (top+bottom) * h_1;
-		proj.frustum.m22= -(near+far) * d_1;
-		proj.frustum.m32= -2 * near * far * d_1;
+		proj.frustum.m22= -(near_z+far_z) * d_1;
+		proj.frustum.m32= -2 * near_z * far_z * d_1;
 		RETVAL= m3s_wrap_projection(&proj,
 			// use optimized version if m20 and m21 are zero
 			fabs(proj.frustum.m20) < double_tolerance && fabs(proj.frustum.m21) < double_tolerance
@@ -1234,20 +1234,20 @@ new_frustum(left, right, bottom, top, near, far)
 		RETVAL
 
 SV *
-new_perspective(vertical_field_of_view, aspect, near, far)
+new_perspective(vertical_field_of_view, aspect, near_z, far_z)
 	double vertical_field_of_view
 	double aspect
-	double near
-	double far
+	double near_z
+	double far_z
 	INIT:
 		m3s_4space_projection_t proj;
-		double f;
+		double f= tan(M_PI_2 - vertical_field_of_view * M_PI),
+		       neg_inv_range_z= -1 / (far_z - near_z);
 	CODE:
-		f= tan(M_PI_2 - vertical_field_of_view * M_PI);
-		proj.frustum.m00= f /aspect;
+		proj.frustum.m00= f / aspect;
 		proj.frustum.m11= f;
-		proj.frustum.m22= -1;
-		proj.frustum.m32= -near;
+		proj.frustum.m22= (near_z+far_z) * neg_inv_range_z;
+		proj.frustum.m32= 2 * near_z * far_z * neg_inv_range_z;
 		RETVAL= m3s_wrap_projection(&proj, "Math::3Space::Projection::CenteredFrustum");
 	OUTPUT:
 		RETVAL
