@@ -1,7 +1,7 @@
 package Math::3Space::Projection;
 
 # VERSION
-# ABSTRACT: Object wrapping a 4D projection, for rendering use
+# ABSTRACT: Object wrapping a 4D projection, for use in OpenGL rendering
 
 use Exporter 'import';
 our @EXPORT_OK= qw( perspective frustum );
@@ -9,7 +9,7 @@ our @EXPORT_OK= qw( perspective frustum );
 # All methods handled by XS
 require Math::3Space;
 
-use overload '""' => sub { "[@{[$_[0]->get_gl_matrix]}]" };
+use overload '""' => sub { "[@{[$_[0]->matrix_colmajor]}]" };
 
 1;
 __END__
@@ -21,9 +21,9 @@ __END__
   
   my $projection= perspective(1/5, 4/3, 1, 10000);
   my $modelview= space;
-  glLoadMatrixf_p($projection->gl_matrix($modelview));
+  glLoadMatrixf_p($projection->matrix_colmajor($modelview));
   # or
-  glLoadMatrixf_s($projection->gl_matrix_packed_float($modelview));
+  glLoadMatrixf_s($projection->matrix_pack_float($modelview));
 
 =head1 DESCRIPTION
 
@@ -47,7 +47,7 @@ multiplications, but this module does it in 20, or 12 for a centered frustum!
 C<$vertical_field_of_view> is in "revolutions", not radians.  This saves you from needing to
 mention Pi in your parameter.
 
-C<$aspect> is the typical "4/3" ot "16/9" ratio of width over height.
+C<$aspect> is the typical "4/3" or "16/9" ratio of width over height.
 
 C<$near_z> and C<far_z> are the range of Z coordinates of the space to be projected.
 
@@ -81,25 +81,25 @@ will be filled with the OpenGL default of C<< [-1,1] >> ranges.
 
 =head1 METHODS
 
-=head2 gl_matrix
+=head2 matrix_colmajor
 
-  @mat16= $projection->gl_matrix;         # the matrix of the projection itself
-  @mat16= $projection->gl_matrix($space); # the space transformed by the projection
+  @mat16= $projection->matrix_colmajor;         # the matrix of the projection itself
+  @mat16= $projection->matrix_colmajor($space); # the space transformed by the projection
 
 Returns the 16 floating point values of the 4x4 matrix, in column-major order as used by OpenGL.
 
-=head2 gl_matrix_packed_float
+=head2 matrix_pack_float
 
-  $gl_float_buffer= $projection->gl_matrix_packed_float;
-  $gl_float_buffer= $projection->gl_matrix_packed_float($space);
+  $gl_float_buffer= $projection->matrix_pack_float;
+  $gl_float_buffer= $projection->matrix_pack_float($space);
 
-Same as C<gl_matrix>, but pack the numbers into a scalar of floats.
+Same as C<matrix>, but pack the numbers into a scalar of floats.
 
-=head2 gl_matrix_packed_double
+=head2 matrix_pack_double
 
-  $gl_double_buffer= $projection->gl_matrix_packed_double;
-  $gl_double_buffer= $projection->gl_matrix_packed_double($space);
+  $gl_double_buffer= $projection->matrix_pack_double;
+  $gl_double_buffer= $projection->matrix_pack_double($space);
 
-Same as C<gl_matrix>, but pack the numbers into a scalar of doubles.
+Same as C<matrix>, but pack the numbers into a scalar of doubles.
 
 =cut

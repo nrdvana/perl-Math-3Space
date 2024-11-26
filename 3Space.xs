@@ -1244,6 +1244,8 @@ perspective(vertical_field_of_view, aspect, near_z, far_z)
 	CODE:
 		proj.frustum.m00= f / aspect;
 		proj.frustum.m11= f;
+		proj.frustum.m20= 0;
+		proj.frustum.m21= 0;
 		proj.frustum.m22= (near_z+far_z) * neg_inv_range_z;
 		proj.frustum.m32= 2 * near_z * far_z * neg_inv_range_z;
 		RETVAL= m3s_wrap_projection(&proj, "Math::3Space::Projection::CenteredFrustum");
@@ -1256,15 +1258,17 @@ MODULE = Math::3Space              PACKAGE = Math::3Space::Projection::Frustum
 # zeroes and ones in both the 3Space matrix and the projection matrix.
 
 void
-get_gl_matrix(proj, space=NULL)
+matrix_colmajor(proj, space=NULL)
 	m3s_4space_projection_t *proj
 	m3s_space_t *space
 	ALIAS:
-		get_gl_matrix_packed_float  = 1
-		get_gl_matrix_packed_double = 2
-		Math::3Space::Projection::CenteredFrustum::get_gl_matrix               = 4
-		Math::3Space::Projection::CenteredFrustum::get_gl_matrix_packed_float  = 5
-		Math::3Space::Projection::CenteredFrustum::get_gl_matrix_packed_double = 6
+		get_gl_matrix      = 0
+		matrix_pack_float  = 1
+		matrix_pack_double = 2
+		Math::3Space::Projection::CenteredFrustum::matrix_colmajor    = 4
+		Math::3Space::Projection::CenteredFrustum::get_gl_matrix      = 4
+		Math::3Space::Projection::CenteredFrustum::matrix_pack_float  = 5
+		Math::3Space::Projection::CenteredFrustum::matrix_pack_double = 6
 	INIT:
 		double dst[16];
 		struct m3s_4space_frustum_projection *f= &proj->frustum;
