@@ -3,11 +3,11 @@ package Math::3Space::Projection;
 # VERSION
 # ABSTRACT: Object wrapping a 4D projection, for use in OpenGL rendering
 
-use Exporter 'import';
-our @EXPORT_OK= qw( perspective frustum );
-
 # All methods handled by XS
 require Math::3Space;
+
+sub new_frustum     { shift if !ref $_[0] && $_[0] eq __PACKAGE__; &_frustum }
+sub new_perspective { shift if !ref $_[0] && $_[0] eq __PACKAGE__; &_perspective }
 
 use overload '""' => sub { "[@{[$_[0]->matrix_colmajor]}]" };
 
@@ -16,8 +16,7 @@ __END__
 
 =head1 SYNOPSIS
 
-  use Math::3Space 'space';
-  use Math::3Space::Projection 'perspective';
+  use Math::3Space qw/ space perspective /;
   
   my $projection= perspective(1/5, 4/3, 1, 10000);
   my $modelview= space;
@@ -38,11 +37,13 @@ matrix and multiply it by a (logically) 4x4 projection matrix in many fewer mult
 than invoking the full 4x4 matrix math.  Multiplying two 4x4 matrices is nominally 64
 multiplications, but this module does it in 20, or 12 for a centered frustum!
 
-=head1 EXPORTED FUNCTIONS
+=head1 CONSTRUCTORS
 
-=head2 perspective
+=head2 new_perspective
 
-  my $projection= perspective($vertical_field_of_view, $aspect, $near_z, $far_z);
+  $projection= Math::3Space::Projection->new_perspective(
+    $vertical_field_of_view, $aspect, $near_z, $far_z
+  );
 
 C<$vertical_field_of_view> is in "revolutions", not radians.  This saves you from needing to
 mention Pi in your parameter.
@@ -51,33 +52,15 @@ C<$aspect> is the typical "4/3" or "16/9" ratio of width over height.
 
 C<$near_z> and C<far_z> are the range of Z coordinates of the space to be projected.
 
-=head2 frustum
+=head2 new_frustum
 
-  my $perspective= frustum($left, $right, $bottom, $top, $near_z, $far_z);
+  $perspective= Math::3Space::Projection->new_frustum(
+    $left, $right, $bottom, $top, $near_z, $far_z
+  );
 
 Same as OpenGL's L<glFrustum|https://docs.gl/gl3/glFrustum>.  It describes the edges of the
 near face of a stretched box where the sides of the box are planes that pass through the origin
 and the edge of the viewport at C<$near_z>, continuing outward until they reach C<$far_z>.
-
-=head1 CONSTRUCTOR
-
-=head2 new
-
-  $projection= Math::3Space::Projection->new(
-    left   => 1,
-    right  => 1,
-    width  => 2,
-    top    => 1,
-    bottom => 1,
-    height => 2,
-    near   => 1,
-    far    => 10000,
-    aspect => 16/9,
-    fov    => 1/5,
-  );
-
-Create a projection from named attributes.  If you under-specify a frustum the missing details
-will be filled with the OpenGL default of C<< [-1,1] >> ranges.
 
 =head1 METHODS
 

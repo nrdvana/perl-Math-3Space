@@ -1197,7 +1197,7 @@ get_gl_matrix(space, buffer=NULL)
 MODULE = Math::3Space              PACKAGE = Math::3Space::Projection
 
 SV *
-frustum(left, right, bottom, top, near_z, far_z)
+_frustum(left, right, bottom, top, near_z, far_z)
 	double left
 	double right
 	double bottom
@@ -1232,7 +1232,7 @@ frustum(left, right, bottom, top, near_z, far_z)
 		RETVAL
 
 SV *
-perspective(vertical_field_of_view, aspect, near_z, far_z)
+_perspective(vertical_field_of_view, aspect, near_z, far_z)
 	double vertical_field_of_view
 	double aspect
 	double near_z

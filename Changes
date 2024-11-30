@@ -1,5 +1,6 @@
 0.008 - 2024-11-30
-  - 4D Projection objects, and 'perspective' and 'frustum' functions
+  - Rearrange API and officially publish 4D Projection objects
+  - Export 'perspective' and 'frustum' functions from Math::3Space
 
 0.006-0.007
   - Really actually fix broken tests

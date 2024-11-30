@@ -75,8 +75,8 @@ systems.
 	require Math::3Space::Projection;
 	*vec3= *Math::3Space::Vector::vec3;
 	*space= *Math::3Space::space;
-	*frustum= *frustum_projection= *Math::3Space::Projection::frustum;
-	*perspective= *perspective_projection= *Math::3Space::Projection::perspective;
+	*frustum= *frustum_projection= *Math::3Space::Projection::_frustum;
+	*perspective= *perspective_projection= *Math::3Space::Projection::_perspective;
 	export qw( vec3 space frustum frustum_projection perspective perspective_projection );
 }
 sub import { shift; Math::3Space::Exports->import_into(scalar(caller), @_) }
