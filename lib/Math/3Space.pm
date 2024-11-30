@@ -71,24 +71,29 @@ systems.
 
 { package Math::3Space::Exports;
 	use Exporter::Extensible -exporter_setup => 1;
+	require Math::3Space::Vector;
+	require Math::3Space::Projection;
 	*vec3= *Math::3Space::Vector::vec3;
 	*space= *Math::3Space::space;
-	*frustum= *Math::3Space::Projection::frustum;
-	*perspective= *Math::3Space::Projection::perspective;
-	export qw( vec3 space frustum perspective );
+	*frustum= *frustum_projection= *Math::3Space::Projection::frustum;
+	*perspective= *perspective_projection= *Math::3Space::Projection::perspective;
+	export qw( vec3 space frustum frustum_projection perspective perspective_projection );
 }
 sub import { shift; Math::3Space::Exports->import_into(scalar(caller), @_) }
 
-sub parent { $_[0]{parent} }
+sub parent { croak "read-only attribute" if @_ > 1; $_[0]{parent} }
 
-# used by XS to avoid linking directly to PDL
+# Used by XS to avoid linking directly to PDL.  The XS can call out to this perl method to
+# perform the PDL operations of vector subtraction, matrix multiplication, and vector addition,
+# all of which are overloaded operators and would be tedious to call from XS.
+# One single call to this method can operate in parallel on an ndarray of vectors, thanks to
+# PDL's broadcasting system, so this only gets called once per call to 'project_inplace'.
 sub _pdl_project_inplace {
 	$_[0] -= $_[1] if defined $_[1];
 	$_[0] .= $_[0] x $_[2];
 	$_[0] += $_[3] if defined $_[3];
 }
 
-require Math::3Space::Vector;
 1;
 
 __END__

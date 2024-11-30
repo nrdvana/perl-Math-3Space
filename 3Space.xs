@@ -72,6 +72,7 @@ struct m3s_4space_frustum_projection {
 	 *  |_ 0    0   -1    0 _|
 	 */
 	double m00, m11, m20, m21, m22, m32;
+	bool centered;
 };
 typedef union m3s_4space_projection {
 	struct m3s_4space_frustum_projection frustum;
@@ -1222,11 +1223,10 @@ frustum(left, right, bottom, top, near_z, far_z)
 		proj.frustum.m21= (top+bottom) * h_1;
 		proj.frustum.m22= -(near_z+far_z) * d_1;
 		proj.frustum.m32= -2 * near_z * far_z * d_1;
+		// use optimized version if m20 and m21 are zero
+		proj.frustum.centered= fabs(proj.frustum.m20) < double_tolerance && fabs(proj.frustum.m21) < double_tolerance;
 		RETVAL= m3s_wrap_projection(&proj,
-			// use optimized version if m20 and m21 are zero
-			fabs(proj.frustum.m20) < double_tolerance && fabs(proj.frustum.m21) < double_tolerance
-			? "Math::3Space::Projection::CenteredFrustum"
-			: "Math::3Space::Projection::Frustum"
+			"Math::3Space::Projection::Frustum"
 		);
 	OUTPUT:
 		RETVAL
@@ -1248,7 +1248,8 @@ perspective(vertical_field_of_view, aspect, near_z, far_z)
 		proj.frustum.m21= 0;
 		proj.frustum.m22= (near_z+far_z) * neg_inv_range_z;
 		proj.frustum.m32= 2 * near_z * far_z * neg_inv_range_z;
-		RETVAL= m3s_wrap_projection(&proj, "Math::3Space::Projection::CenteredFrustum");
+		proj.frustum.centered= true;
+		RETVAL= m3s_wrap_projection(&proj, "Math::3Space::Projection::Frustum");
 	OUTPUT:
 		RETVAL
 
@@ -1265,10 +1266,6 @@ matrix_colmajor(proj, space=NULL)
 		get_gl_matrix      = 0
 		matrix_pack_float  = 1
 		matrix_pack_double = 2
-		Math::3Space::Projection::CenteredFrustum::matrix_colmajor    = 4
-		Math::3Space::Projection::CenteredFrustum::get_gl_matrix      = 4
-		Math::3Space::Projection::CenteredFrustum::matrix_pack_float  = 5
-		Math::3Space::Projection::CenteredFrustum::matrix_pack_double = 6
 	INIT:
 		double dst[16];
 		struct m3s_4space_frustum_projection *f= &proj->frustum;
@@ -1279,7 +1276,7 @@ matrix_colmajor(proj, space=NULL)
 			dst[ 2]= 0;      dst[ 6]= 0;      dst[10]= f->m22;  dst[14]= f->m32;
 			dst[ 3]= 0;      dst[ 7]= 0;      dst[11]= -1;      dst[15]= 0;
 		}
-		else if (ix & 4) { /* centered frustum, optimize by assuming m20 and m21 are zero */
+		else if (proj->frustum.centered) { /* centered frustum, optimize by assuming m20 and m21 are zero */
 			dst[ 0]= f->m00 * SPACE_XV(space)[0];
 			dst[ 1]= f->m11 * SPACE_XV(space)[1];
 			dst[ 2]= f->m22 * SPACE_XV(space)[2];
@@ -1537,8 +1534,5 @@ BOOT:
 	AV *isa;
 	hv_stores(inc, "Math::3Space::Projection",                  newSVpvs("Math/3Space.pm"));
 	hv_stores(inc, "Math::3Space::Projection::Frustum",         newSVpvs("Math/3Space.pm"));
-	hv_stores(inc, "Math::3Space::Projection::CenteredFrustum", newSVpvs("Math/3Space.pm"));
 	isa= get_av("Math::3Space::Projection::Frustum::ISA", GV_ADD);
-	av_push(isa, newSVpvs("Math::3Space::Projection"));
-	isa= get_av("Math::3Space::Projection::CenteredFrustum::ISA", GV_ADD);
 	av_push(isa, newSVpvs("Math::3Space::Projection"));
